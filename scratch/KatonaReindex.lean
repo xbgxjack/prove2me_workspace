@@ -29,7 +29,7 @@ intersection. -/
 lemma subtype_inter_of_forall {A B : Finset α} (hA : ∀ x ∈ A, p x) (hB : ∀ x ∈ B, p x) :
     A.subtype p ∩ B.subtype p = (A ∩ B).subtype p := by
   have hAB : ∀ x ∈ A ∩ B, p x := fun x hx => hA x (Finset.mem_of_mem_inter_left hx)
-  apply Finset.map_injective (Embedding.subtype p)
+  apply Finset.map_injective (Function.Embedding.subtype p)
   rw [Finset.map_inter, Finset.subtype_map_of_mem hA, Finset.subtype_map_of_mem hB,
     Finset.subtype_map_of_mem hAB]
 
@@ -46,7 +46,7 @@ theorem TIntersecting.subtype_of_forall {t : ℕ} {ℬ : Finset (Finset α)}
     obtain ⟨A, hAmem, rfl⟩ := hA'
     obtain ⟨B, hBmem, rfl⟩ := hB'
     rw [subtype_inter_of_forall (hp A hAmem) (hp B hBmem)]
-    have hcard : (A ∩ B).subtype p |>.card = (A ∩ B).card := by
+    have hcard : ((A ∩ B).subtype p).card = (A ∩ B).card := by
       conv_rhs => rw [← Finset.subtype_map_of_mem
         (fun x hx => hp A hAmem x (Finset.mem_of_mem_inter_left hx))]
       rw [Finset.card_map]
