@@ -1,4 +1,5 @@
 import Definitions.Def_GYGraphTheory
+import Theorems.Thm_GYGraphTheory_prop_3_7_1
 import Mathlib
 
 open scoped Classical
@@ -904,4 +905,210 @@ lemma part2 (hn : 2 ≤ n) (s : Fin (n - 2) → Fin n) :
     exact h2
   exact List.ofFn_inj.mp h1
 
+/-! ### For a tree, the peeling accumulator is a free prefix of its own encode -/
+
+lemma pruferPeel_acc_eq_take (T : SimpleGraph (Fin n)) {d : ℕ} (hd : d ≤ n - 2) :
+    (pruferPeel T d).2 = List.take d (List.ofFn (pruferEncode T)) := by
+  apply List.ext_getElem
+  · rw [pruferPeel_acc_length, List.length_take, List.length_ofFn]; omega
+  intro i h1 h2
+  have hidx : i < d := by rwa [pruferPeel_acc_length] at h1
+  have h2' : i < (List.ofFn (pruferEncode T)).length := by rw [List.length_ofFn]; omega
+  rw [List.getElem_take, ← List.getD_eq_getElem _ _ h1, ← List.getD_eq_getElem _ _ h2',
+    ofFn_pruferEncode_eq T]
+  exact (pruferPeel_acc_prefix T hd i hidx).symm
+
+lemma ofFn_getD_eq_nb (T : SimpleGraph (Fin n)) (j : ℕ) (hj : j < n - 2) :
+    (List.ofFn (pruferEncode T)).getD j 0 = leastActiveLeafNeighbor T (pruferPeel T j).1 := by
+  rw [ofFn_pruferEncode_eq T, pruferPeel_acc_prefix T (show j + 1 ≤ n - 2 by omega) j (by omega),
+    pruferPeel_succ]
+  rw [List.getD_append_right _ _ _ _ (by rw [pruferPeel_acc_length])]
+  simp [pruferPeel_acc_length]
+
+lemma drop_ofFn_subset (T : SimpleGraph (Fin n)) (hT : T.IsTree) {d : ℕ} (hd : d ≤ n - 2) :
+    (List.drop d (List.ofFn (pruferEncode T))).toFinset ⊆ (pruferPeel T d).1 := by
+  intro x hx
+  rw [List.mem_toFinset] at hx
+  obtain ⟨i, hi, hget⟩ := List.mem_iff_getElem.mp hx
+  rw [List.getElem_drop] at hget
+  set j := d + i with hj_def
+  have hjlt : j < n - 2 := by
+    have := hi
+    rw [List.length_drop, List.length_ofFn] at this
+    omega
+  have hxj : x = leastActiveLeafNeighbor T (pruferPeel T j).1 := by
+    rw [← hget, ← ofFn_getD_eq_nb T j hjlt, List.getD_eq_getElem _ _ (by rw [List.length_ofFn]; omega)]
+  have hcard2 : 2 ≤ (pruferPeel T j).1.card := by
+    obtain ⟨hcard, htree⟩ := peel_invariant T hT j (by omega)
+    omega
+  obtain ⟨hcard, htree⟩ := peel_invariant T hT j (by omega)
+  have hleafActive := leastActiveLeaf_isActiveLeaf T (pruferPeel T j).1 htree hcard2
+  have hnbmem := leastActiveLeafNeighbor_mem T (pruferPeel T j).1 hleafActive.2
+  rw [activeNeighbors, Finset.mem_filter] at hnbmem
+  rw [hxj]
+  exact pruferPeel_set_subset T (show d ≤ j by omega) hnbmem.1
+
+/-! ### Master lemma for Part 1: decoding a tree's own encode recovers the tree -/
+
+lemma master_lemma_part1 (hn : 2 ≤ n) (T : SimpleGraph (Fin n)) (hT : T.IsTree) :
+    ∀ e, e ≤ n - 2 →
+      restrictG T (pruferPeel T (n - 2 - e)).1 =
+        pruferDecodeAux (List.drop (n - 2 - e) (List.ofFn (pruferEncode T)))
+          (pruferPeel T (n - 2 - e)).1 := by
+  intro e
+  induction e with
+  | zero =>
+    intro _
+    set S := (pruferPeel T (n - 2 - 0)).1 with hS_def
+    have hd0 : n - 2 - 0 = n - 2 := by omega
+    have hdrop_nil : List.drop (n - 2 - 0) (List.ofFn (pruferEncode T)) = [] := by
+      rw [hd0]; simp [List.length_ofFn]
+    rw [hdrop_nil]
+    obtain ⟨hcard, htree⟩ := peel_invariant T hT (n - 2) (le_refl _)
+    have hSeq : S = (pruferPeel T (n - 2)).1 := by rw [hS_def, hd0]
+    have hcard2 : S.card = 2 := by rw [hSeq]; omega
+    have htreeS : (active T S).IsTree := by rw [hSeq]; exact htree
+    show restrictG T S =
+      SimpleGraph.fromEdgeSet {s(S.min.getD 0, (S.erase (S.min.getD 0)).min.getD 0)}
+    have hSne : S.Nonempty := Finset.card_pos.mp (by omega)
+    have haS : S.min.getD 0 = S.min' hSne := by
+      show S.min.getD 0 = _; rw [← Finset.coe_min' hSne]; rfl
+    have ha_mem : S.min.getD 0 ∈ S := haS ▸ Finset.min'_mem _ _
+    set a := S.min.getD 0 with ha_def
+    have hSe_ne : (S.erase a).Nonempty :=
+      Finset.card_pos.mp (by rw [Finset.card_erase_of_mem ha_mem]; omega)
+    have hbS : (S.erase a).min.getD 0 = (S.erase a).min' hSe_ne := by
+      show (S.erase a).min.getD 0 = _; rw [← Finset.coe_min' hSe_ne]; rfl
+    have hb_mem : (S.erase a).min.getD 0 ∈ S.erase a := hbS ▸ Finset.min'_mem _ _
+    set b := (S.erase a).min.getD 0 with hb_def
+    have hab_ne : a ≠ b := (Finset.mem_erase.mp hb_mem).1.symm
+    have hb_memS : b ∈ S := Finset.mem_of_mem_erase hb_mem
+    have hSab : ({a, b} : Finset (Fin n)) = S := by
+      apply Finset.eq_of_subset_of_card_le
+      · intro x hx
+        rcases Finset.mem_insert.mp hx with rfl | hx
+        · exact ha_mem
+        · rw [Finset.mem_singleton] at hx; rw [hx]; exact hb_memS
+      · rw [hcard2, Finset.card_insert_of_notMem (by simp [hab_ne]), Finset.card_singleton]
+    have hTadj : T.Adj a b := by
+      have h1 := final_active_degree_one T S htreeS hcard2 a ha_mem
+      have hsub : activeNeighbors T S a ⊆ {b} := by
+        rw [← hSab]
+        intro y hy
+        rw [activeNeighbors, Finset.mem_filter, Finset.mem_insert, Finset.mem_singleton] at hy
+        rw [Finset.mem_singleton]
+        rcases hy.1 with rfl | hy1
+        · exact (T.irrefl hy.2).elim
+        · exact hy1
+      have hne : (activeNeighbors T S a).Nonempty := Finset.card_pos.mp (by omega)
+      obtain ⟨y, hy⟩ := hne
+      have hyb : y = b := Finset.mem_singleton.mp (hsub hy)
+      rw [activeNeighbors, Finset.mem_filter] at hy
+      rw [← hyb]; exact hy.2
+    ext x y
+    simp only [restrictG, SimpleGraph.fromEdgeSet_adj, Set.mem_singleton_iff]
+    constructor
+    · rintro ⟨hxS, hyS, hxy⟩
+      rw [← hSab, Finset.mem_insert, Finset.mem_singleton] at hxS hyS
+      rcases hxS with rfl | hxS
+      · rcases hyS with rfl | hyS
+        · exact (T.irrefl hxy).elim
+        · rw [hyS] at hxy ⊢; exact ⟨rfl, hxy.ne⟩
+      · rcases hyS with rfl | hyS
+        · rw [hxS] at hxy ⊢; exact ⟨Sym2.eq_swap, hxy.ne⟩
+        · rw [hxS, hyS] at hxy; exact (T.irrefl hxy).elim
+    · rintro ⟨heq, hne⟩
+      rcases Sym2.eq_iff.mp heq with ⟨h1, h2⟩ | ⟨h1, h2⟩
+      · rw [h1, h2]; exact ⟨ha_mem, hb_memS, hTadj⟩
+      · rw [h1, h2]; exact ⟨hb_memS, ha_mem, hTadj.symm⟩
+  | succ e ih =>
+    intro he1
+    have he : e ≤ n - 2 := by omega
+    have hIH := ih he
+    set d := n - 2 - (e + 1) with hd_def
+    have hde : n - 2 - e = d + 1 := by omega
+    rw [hde] at hIH
+    show restrictG T (pruferPeel T d).1 =
+      pruferDecodeAux (List.drop d (List.ofFn (pruferEncode T))) (pruferPeel T d).1
+    set l0 := List.ofFn (pruferEncode T) with hl0_def
+    set S := (pruferPeel T d).1 with hS_def
+    have hd2 : d ≤ n - 2 := by omega
+    have hd2' : d < n - 2 := by omega
+    obtain ⟨hcard, htree⟩ := peel_invariant T hT d hd2
+    rw [← hS_def] at hcard
+    have hlen : l0.length = n - 2 := List.length_ofFn
+    have hd2'' : d < l0.length := by rw [hlen]; omega
+    have hcons : List.drop d l0 = leastActiveLeafNeighbor T S :: List.drop (d + 1) l0 := by
+      rw [List.drop_eq_getElem_cons hd2'']
+      congr 1
+      rw [← ofFn_getD_eq_nb T d hd2']
+      exact (List.getD_eq_getElem _ _ hd2'').symm
+    set leaf := leastActiveLeaf T S with hleaf_def
+    set nb := leastActiveLeafNeighbor T S with hnb_def
+    have hcard2 : 2 ≤ S.card := by omega
+    have hleafActive : IsActiveLeaf T S leaf := leastActiveLeaf_isActiveLeaf T S htree hcard2
+    have hnbmem : nb ∈ activeNeighbors T S leaf := leastActiveLeafNeighbor_mem T S hleafActive.2
+    -- Bridge T's degree formula (from the accepted Prop 3.7.1) with the local active-degree
+    have hbridge : ∀ x ∈ S, (activeNeighbors T S x).card = (List.drop d l0).count x + 1 := by
+      intro x hx
+      have hcnt := count_invariant T hT d hd2 x hx
+      rw [pruferPeel_acc_eq_take T hd2, ← hS_def, ← hl0_def] at hcnt
+      have hglobal := GYGraphTheory.prop_3_7_1 hn T hT x
+      rw [← hl0_def] at hglobal
+      have hsplit : (List.take d l0).count x + (List.drop d l0).count x = l0.count x := by
+        conv_rhs => rw [← List.take_append_drop d l0]
+        rw [List.count_append]
+      omega
+    have hfilter_eq : S.filter (IsActiveLeaf T S) = S \ (List.drop d l0).toFinset := by
+      ext x
+      rw [Finset.mem_filter, Finset.mem_sdiff]
+      constructor
+      · rintro ⟨hxS, hxS', hcard1⟩
+        refine ⟨hxS, ?_⟩
+        intro hmem
+        have := hbridge x hxS
+        rw [List.mem_toFinset] at hmem
+        have hcnt_pos : 0 < (List.drop d l0).count x := List.count_pos_iff.mpr hmem
+        omega
+      · rintro ⟨hxS, hxnotmem⟩
+        refine ⟨hxS, hxS, ?_⟩
+        have := hbridge x hxS
+        have hcnt0 : (List.drop d l0).count x = 0 := by
+          rw [List.count_eq_zero]
+          intro hmem
+          exact hxnotmem (List.mem_toFinset.mpr hmem)
+        omega
+    have hleaf_eq_k : leaf = (S \ (List.drop d l0).toFinset).min.getD 0 := by
+      show (S.filter (IsActiveLeaf T S)).min.getD 0 = _
+      rw [hfilter_eq]
+    have hleaf_eq_k' : leaf = (S \ (nb :: List.drop (d + 1) l0).toFinset).min.getD 0 := by
+      rw [hleaf_eq_k, hcons]
+    have hunfold : pruferDecodeAux (nb :: List.drop (d + 1) l0) S =
+        pruferDecodeAux (List.drop (d + 1) l0) (S.erase leaf) ⊔
+          SimpleGraph.fromEdgeSet {s(leaf, nb)} := by
+      rw [hleaf_eq_k']; rfl
+    rw [hcons, hunfold, tree_decompose_leaf T S htree hcard2]
+    rw [pruferPeel_succ, ← hleaf_def] at hIH
+    congr 1
+
+/-! ### Part 1: decoding a tree's own encoding recovers the tree -/
+
+lemma part1 (hn : 2 ≤ n) (T : SimpleGraph (Fin n)) (hT : T.IsTree) :
+    pruferDecode (pruferEncode T) = T := by
+  have h := master_lemma_part1 hn T hT (n - 2) (le_refl _)
+  rw [Nat.sub_self] at h
+  have h0 : (pruferPeel T 0).1 = Finset.univ := by simp [pruferPeel]
+  rw [h0, List.drop_zero] at h
+  rw [restrictG_univ] at h
+  exact h.symm
+
 end GYGraphTheory
+
+open GYGraphTheory
+
+theorem solution {n : ℕ} (hn : 2 ≤ n) :
+    haveI : NeZero n := ⟨by omega⟩
+    (∀ T : SimpleGraph (Fin n), T.IsTree → pruferDecode (pruferEncode T) = T) ∧
+      (∀ s : Fin (n - 2) → Fin n, pruferEncode (pruferDecode s) = s) := by
+  haveI : NeZero n := ⟨by omega⟩
+  exact ⟨fun T hT => part1 hn T hT, fun s => part2 hn s⟩
