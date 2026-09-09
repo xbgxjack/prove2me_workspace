@@ -1,5 +1,5 @@
 import Mathlib
-import Definitions.Def_Katona
+import Definitions.Def_TIntersecting
 
 open Finset UV
 open scoped FinsetFamily
