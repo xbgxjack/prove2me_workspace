@@ -221,4 +221,4 @@ open Katona
 theorem solution {n : ℕ} (z i : Fin n) (hzi : z ≠ i) (t : ℕ)
     {𝒜 : Finset (Finset (Fin n))} (h𝒜 : TIntersecting t 𝒜) :
     TIntersecting t (𝓒 ({z} : Finset (Fin n)) ({i} : Finset (Fin n)) 𝒜) :=
-  compression_preserves_TIntersecting z i hzi t h𝒜
+  compression_preserves_TIntersecting z i hzi h𝒜
