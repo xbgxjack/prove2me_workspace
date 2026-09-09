@@ -646,4 +646,262 @@ lemma decode_count_invariant (l : List (Fin n)) :
         rw [heqset, IH]
         simp only [List.count_cons, beq_iff_eq, if_neg (Ne.symm hxp)]
 
+/-! ### Restricting a graph to an active label set (stays on `Fin n`, no subtype) -/
+
+def restrictG (T : SimpleGraph (Fin n)) (S : Finset (Fin n)) : SimpleGraph (Fin n) where
+  Adj a b := a ∈ S ∧ b ∈ S ∧ T.Adj a b
+  symm := ⟨fun a b ⟨ha, hb, hab⟩ => ⟨hb, ha, hab.symm⟩⟩
+  loopless := ⟨fun a ⟨_, _, haa⟩ => T.irrefl haa⟩
+
+lemma restrictG_univ (T : SimpleGraph (Fin n)) : restrictG T Finset.univ = T := by
+  ext a b
+  simp [restrictG]
+
+lemma activeNeighbors_restrictG (T : SimpleGraph (Fin n)) (S : Finset (Fin n)) (x : Fin n)
+    (hx : x ∈ S) : activeNeighbors (restrictG T S) S x = activeNeighbors T S x := by
+  rw [activeNeighbors, activeNeighbors]
+  ext w
+  rw [Finset.mem_filter, Finset.mem_filter]
+  show (w ∈ S ∧ x ∈ S ∧ w ∈ S ∧ T.Adj x w) ↔ w ∈ S ∧ T.Adj x w
+  constructor
+  · rintro ⟨hw, _, _, hadj⟩; exact ⟨hw, hadj⟩
+  · rintro ⟨hw, hadj⟩; exact ⟨hw, hx, hw, hadj⟩
+
+lemma decode_is_tree (hn : 2 ≤ n) (l0 : List (Fin n)) (hlen : l0.length = n - 2) :
+    (pruferDecodeAux l0 (Finset.univ : Finset (Fin n))).IsTree := by
+  have hcard : (Finset.univ : Finset (Fin n)).card = l0.length + 2 := by
+    rw [hlen, Finset.card_univ, Fintype.card_fin]; omega
+  have hsub : l0.toFinset ⊆ (Finset.univ : Finset (Fin n)) := Finset.subset_univ _
+  obtain ⟨hsupp, hacyc, hconn⟩ := pruferDecodeAux_invariant l0 Finset.univ hcard hsub
+  exact ⟨(activeUnivIsoD _).connected_iff.mp hconn, hacyc⟩
+
+/-! ### A tree decomposes as (tree minus its least leaf) plus that leaf's edge -/
+
+lemma tree_decompose_leaf (T : SimpleGraph (Fin n)) (S : Finset (Fin n))
+    (hTree : (active T S).IsTree) (hcard : 2 ≤ S.card) :
+    restrictG T S = restrictG T (S.erase (leastActiveLeaf T S)) ⊔
+      SimpleGraph.fromEdgeSet {s(leastActiveLeaf T S, leastActiveLeafNeighbor T S)} := by
+  set leaf := leastActiveLeaf T S with hleaf_def
+  set nb := leastActiveLeafNeighbor T S with hnb_def
+  have hleafActive : IsActiveLeaf T S leaf := leastActiveLeaf_isActiveLeaf T S hTree hcard
+  have hnbmem : nb ∈ activeNeighbors T S leaf := leastActiveLeafNeighbor_mem T S hleafActive.2
+  have hnbmem' := hnbmem
+  rw [activeNeighbors, Finset.mem_filter] at hnbmem'
+  have hleafcard : (activeNeighbors T S leaf).card = 1 := hleafActive.2
+  have huniq : ∀ x ∈ activeNeighbors T S leaf, ∀ y ∈ activeNeighbors T S leaf, x = y :=
+    Finset.card_le_one.mp (by omega)
+  ext a b
+  simp only [restrictG, SimpleGraph.sup_adj, SimpleGraph.fromEdgeSet_adj, Set.mem_singleton_iff,
+    Finset.mem_erase]
+  constructor
+  · rintro ⟨haS, hbS, hadj⟩
+    by_cases hal : a = leaf
+    · subst hal
+      have hbmem : b ∈ activeNeighbors T S leaf := by
+        rw [activeNeighbors, Finset.mem_filter]; exact ⟨hbS, hadj⟩
+      have : b = nb := huniq b hbmem nb hnbmem
+      exact Or.inr ⟨by rw [this], hadj.ne⟩
+    · by_cases hbl : b = leaf
+      · subst hbl
+        have hamem : a ∈ activeNeighbors T S leaf := by
+          rw [activeNeighbors, Finset.mem_filter]; exact ⟨haS, hadj.symm⟩
+        have : a = nb := huniq a hamem nb hnbmem
+        exact Or.inr ⟨by rw [this]; exact Sym2.eq_swap, hadj.ne⟩
+      · exact Or.inl ⟨⟨hal, haS⟩, ⟨hbl, hbS⟩, hadj⟩
+  · rintro (⟨⟨hal, haS⟩, ⟨hbl, hbS⟩, hadj⟩ | ⟨heq, hne⟩)
+    · exact ⟨haS, hbS, hadj⟩
+    · rcases Sym2.eq_iff.mp heq with ⟨h1, h2⟩ | ⟨h1, h2⟩
+      · rw [h1, h2]; exact ⟨hleafActive.1, hnbmem'.1, hnbmem'.2⟩
+      · rw [h1, h2]; exact ⟨hnbmem'.1, hleafActive.1, hnbmem'.2.symm⟩
+
+/-! ### Cancelling a common pendant edge -/
+
+lemma cancel_edge_at_isolated (A B : SimpleGraph (Fin n)) (k p : Fin n) (hkp : k ≠ p)
+    (hA : A.IsIsolated k) (hB : B.IsIsolated k)
+    (heq : A ⊔ SimpleGraph.fromEdgeSet {s(k, p)} = B ⊔ SimpleGraph.fromEdgeSet {s(k, p)}) :
+    A = B := by
+  ext a b
+  by_cases hab : s(a, b) = s(k, p)
+  · rcases Sym2.eq_iff.mp hab with ⟨h1, h2⟩ | ⟨h1, h2⟩
+    · rw [h1, h2]; exact ⟨fun h => absurd h (hA p), fun h => absurd h (hB p)⟩
+    · rw [h1, h2]
+      constructor
+      · intro h; exact absurd h.symm (hA p)
+      · intro h; exact absurd h.symm (hB p)
+  · have h := congrFun (congrFun (congrArg SimpleGraph.Adj heq) a) b
+    simp only [SimpleGraph.sup_adj, SimpleGraph.fromEdgeSet_adj, Set.mem_singleton_iff, hab,
+      false_and, or_false] at h
+    exact Eq.to_iff h
+
+/-! ### Master lemma: peeling a decoded tree retraces the decoding exactly -/
+
+lemma master_lemma_part2 (hn : 2 ≤ n) (l0 : List (Fin n)) (hlen : l0.length = n - 2) :
+    ∀ d, d ≤ n - 2 →
+      (pruferPeel (pruferDecodeAux l0 Finset.univ) d).2 = List.take d l0 ∧
+      restrictG (pruferDecodeAux l0 Finset.univ) (pruferPeel (pruferDecodeAux l0 Finset.univ) d).1
+        = pruferDecodeAux (List.drop d l0) (pruferPeel (pruferDecodeAux l0 Finset.univ) d).1 ∧
+      (List.drop d l0).toFinset ⊆ (pruferPeel (pruferDecodeAux l0 Finset.univ) d).1 := by
+  set T := pruferDecodeAux l0 (Finset.univ : Finset (Fin n)) with hT_def
+  have hT : T.IsTree := decode_is_tree hn l0 hlen
+  intro d
+  induction d with
+  | zero =>
+    intro _
+    refine ⟨by simp [pruferPeel], ?_, ?_⟩
+    · show restrictG T Finset.univ = pruferDecodeAux l0 Finset.univ
+      rw [restrictG_univ]
+    · show l0.toFinset ⊆ (pruferPeel T 0).1
+      rw [show (pruferPeel T 0).1 = Finset.univ from by simp [pruferPeel]]
+      exact Finset.subset_univ _
+  | succ d ih =>
+    intro hd1
+    have hd : d ≤ n - 2 := by omega
+    obtain ⟨hacc, hrestrict, hsub⟩ := ih hd
+    obtain ⟨hcard, htree⟩ := peel_invariant T hT d hd
+    set S := (pruferPeel T d).1 with hS_def
+    have hdrop_ne : List.drop d l0 ≠ [] := by
+      intro hcontra
+      have hlen0 : (List.drop d l0).length = 0 := by rw [hcontra]; rfl
+      rw [List.length_drop, hlen] at hlen0
+      omega
+    obtain ⟨p, ps, hcons⟩ := List.exists_cons_of_ne_nil hdrop_ne
+    have hcard'' : S.card = (List.drop d l0).length + 2 := by
+      rw [List.length_drop, hlen, hcard]; omega
+    have hcard3 : S.card = ps.length + 3 := by
+      rw [hcard'', hcons]; simp
+    -- The local count formula, bridging T's degree-based count and decode's list-based count
+    have hbridge : ∀ x ∈ S, (activeNeighbors T S x).card = (List.drop d l0).count x + 1 := by
+      intro x hx
+      have hcnt := count_invariant T hT d hd x hx
+      rw [hacc] at hcnt
+      have hact_eq : activeNeighbors T S x = activeNeighbors (pruferDecodeAux (List.drop d l0) S) S x := by
+        rw [← activeNeighbors_restrictG T S x hx, hrestrict]
+      have hdec := decode_count_invariant (List.drop d l0) S hcard'' hsub x hx
+      rw [← hact_eq] at hdec
+      have hsplit : (List.take d l0).count x + (List.drop d l0).count x = l0.count x := by
+        conv_rhs => rw [← List.take_append_drop d l0]
+        rw [List.count_append]
+      omega
+    -- leastActiveLeaf T S is exactly decode's choice `k`
+    have hfilter_eq : S.filter (IsActiveLeaf T S) = S \ (p :: ps).toFinset := by
+      ext x
+      rw [Finset.mem_filter, Finset.mem_sdiff]
+      constructor
+      · rintro ⟨hxS, hxS', hcard1⟩
+        refine ⟨hxS, ?_⟩
+        intro hmem
+        have := hbridge x hxS
+        rw [hcons] at this
+        rw [List.mem_toFinset] at hmem
+        have hcnt_pos : 0 < (p :: ps).count x := List.count_pos_iff.mpr hmem
+        omega
+      · rintro ⟨hxS, hxnotmem⟩
+        refine ⟨hxS, hxS, ?_⟩
+        have := hbridge x hxS
+        rw [hcons] at this
+        have hcnt0 : (p :: ps).count x = 0 := by
+          rw [List.count_eq_zero]
+          intro hmem
+          exact hxnotmem (List.mem_toFinset.mpr hmem)
+        omega
+    have hleaf_eq_k : leastActiveLeaf T S = (S \ (p :: ps).toFinset).min.getD 0 := by
+      show (S.filter (IsActiveLeaf T S)).min.getD 0 = _
+      rw [hfilter_eq]
+    set leaf := leastActiveLeaf T S with hleaf_def
+    have hcard2 : 2 ≤ S.card := by omega
+    have hleafActive : IsActiveLeaf T S leaf := leastActiveLeaf_isActiveLeaf T S htree hcard2
+    have hk_mem_filter : leaf ∈ S \ (p :: ps).toFinset := by
+      rw [← hfilter_eq]; exact Finset.mem_filter.mpr ⟨hleafActive.1, hleafActive⟩
+    have hleaf_notmem : leaf ∉ (p :: ps).toFinset := (Finset.mem_sdiff.mp hk_mem_filter).2
+    have hleaf_ne_p : leaf ≠ p := fun h => hleaf_notmem (h ▸ List.mem_toFinset.mpr List.mem_cons_self)
+    have hunfold : pruferDecodeAux (p :: ps) S =
+        pruferDecodeAux ps (S.erase leaf) ⊔ SimpleGraph.fromEdgeSet {s(leaf, p)} := by
+      rw [hleaf_eq_k]; rfl
+    have hrestrict' : restrictG T S =
+        pruferDecodeAux ps (S.erase leaf) ⊔ SimpleGraph.fromEdgeSet {s(leaf, p)} := by
+      rw [hrestrict, hcons, hunfold]
+    have hp_memS : p ∈ S := by
+      apply hsub
+      rw [hcons]
+      exact List.mem_toFinset.mpr List.mem_cons_self
+    have hTadj : T.Adj leaf p := by
+      have hadjR : (restrictG T S).Adj leaf p := by
+        rw [hrestrict']
+        refine Or.inr ?_
+        rw [SimpleGraph.fromEdgeSet_adj]
+        exact ⟨rfl, hleaf_ne_p⟩
+      exact hadjR.2.2
+    have hnb_eq_p : leastActiveLeafNeighbor T S = p := by
+      have hpmem : p ∈ activeNeighbors T S leaf := by
+        rw [activeNeighbors, Finset.mem_filter]
+        exact ⟨hp_memS, hTadj⟩
+      have hnbmem : leastActiveLeafNeighbor T S ∈ activeNeighbors T S leaf :=
+        leastActiveLeafNeighbor_mem T S hleafActive.2
+      have hleafcard : (activeNeighbors T S leaf).card = 1 := hleafActive.2
+      have huniq : ∀ x ∈ activeNeighbors T S leaf, ∀ y ∈ activeNeighbors T S leaf, x = y :=
+        Finset.card_le_one.mp (by omega)
+      exact huniq _ hnbmem _ hpmem
+    -- Combine the two decompositions of `restrictG T S` and cancel the shared pendant edge
+    have hdecompose : restrictG T (S.erase leaf) ⊔ SimpleGraph.fromEdgeSet {s(leaf, p)}
+        = pruferDecodeAux ps (S.erase leaf) ⊔ SimpleGraph.fromEdgeSet {s(leaf, p)} := by
+      rw [← hnb_eq_p, ← tree_decompose_leaf T S htree hcard2, hnb_eq_p]
+      exact hrestrict'
+    have hA_iso : (restrictG T (S.erase leaf)).IsIsolated leaf := by
+      intro w hadj
+      exact (Finset.mem_erase.mp hadj.1).1 rfl
+    have hps_sub_S : ps.toFinset ⊆ S := by
+      intro x hx
+      apply hsub
+      rw [hcons, List.toFinset_cons]
+      exact Finset.mem_insert_of_mem hx
+    have hleaf_notmem_ps : leaf ∉ ps.toFinset := by
+      intro hmem
+      apply hleaf_notmem
+      rw [List.toFinset_cons]
+      exact Finset.mem_insert_of_mem hmem
+    have hB_iso : (pruferDecodeAux ps (S.erase leaf)).IsIsolated leaf := by
+      intro w hadj
+      have hsupp := (pruferDecodeAux_invariant ps (S.erase leaf)
+        (by rw [Finset.card_erase_of_mem (Finset.mem_sdiff.mp hk_mem_filter).1, hcard3]; omega)
+        (Finset.subset_erase.mpr ⟨hps_sub_S, hleaf_notmem_ps⟩)).1
+      exact (Finset.mem_erase.mp (hsupp ⟨w, hadj⟩)).1 rfl
+    have hii : restrictG T (S.erase leaf) = pruferDecodeAux ps (S.erase leaf) :=
+      cancel_edge_at_isolated _ _ leaf p hleaf_ne_p hA_iso hB_iso hdecompose
+    refine ⟨?_, ?_, ?_⟩
+    · rw [pruferPeel_succ]
+      show (pruferPeel T d).2 ++ [leastActiveLeafNeighbor T S] = List.take (d + 1) l0
+      rw [hacc, hnb_eq_p]
+      rw [List.take_succ]
+      congr 1
+      have hget : l0[d]? = some p := by
+        rw [← List.head?_drop (l := l0) (i := d), hcons]; rfl
+      rw [hget]; rfl
+    · show restrictG T ((pruferPeel T d).1.erase (leastActiveLeaf T (pruferPeel T d).1))
+        = pruferDecodeAux (List.drop (d + 1) l0) ((pruferPeel T d).1.erase
+          (leastActiveLeaf T (pruferPeel T d).1))
+      rw [← hS_def, ← hleaf_def]
+      have hdrop_succ : List.drop (d + 1) l0 = ps := by
+        rw [← List.drop_drop, hcons]; rfl
+      rw [hdrop_succ]
+      exact hii
+    · show (List.drop (d + 1) l0).toFinset ⊆ (pruferPeel T d).1.erase (leastActiveLeaf T (pruferPeel T d).1)
+      have hdrop_succ : List.drop (d + 1) l0 = ps := by
+        rw [← List.drop_drop, hcons]; rfl
+      rw [hdrop_succ, ← hS_def, ← hleaf_def, Finset.subset_erase]
+      exact ⟨hps_sub_S, hleaf_notmem_ps⟩
+
+/-! ### Part 2: encoding a decoded sequence recovers it -/
+
+lemma part2 (hn : 2 ≤ n) (s : Fin (n - 2) → Fin n) :
+    pruferEncode (pruferDecode s) = s := by
+  have hlen : (List.ofFn s).length = n - 2 := List.length_ofFn
+  obtain ⟨hacc, -, -⟩ := master_lemma_part2 hn (List.ofFn s) hlen (n - 2) (le_refl _)
+  have h1 : List.ofFn (pruferEncode (pruferDecode s)) = List.ofFn s := by
+    show List.ofFn (pruferEncode (pruferDecodeAux (List.ofFn s) Finset.univ)) = _
+    rw [ofFn_pruferEncode_eq, hacc]
+    have h2 := List.take_length (l := List.ofFn s)
+    rw [hlen] at h2
+    exact h2
+  exact List.ofFn_inj.mp h1
+
 end GYGraphTheory
