@@ -604,4 +604,200 @@ lemma sum_Icc_int_nat_eq (N : ℕ) (h : ℤ → ℝ) :
     congr 1
     omega
 
+/-- **Lemma 9** (final assembly): for `Δ = λ√m` with `λ ≥ 2`, `m ≥ 1`, the
+Shannon entropy of the quantized row-sum is bounded by `(12/log 2)·e^{-λ²/4}`.
+Assembles all seven steps of the hand-derived proof in `SPENCER_PLAN.md`. -/
+theorem shannonEntropy_shellFin_le (hm : 1 ≤ m) (a : Fin m → ℝ)
+    (h01 : ∀ j, a j = 0 ∨ a j = 1) (lam : ℝ) (hlam : 2 ≤ lam) :
+    shannonEntropy (shellFin (lam * Real.sqrt (m:ℝ)) a)
+      ≤ (12 / Real.log 2) * Real.exp (-lam^2/4) := by
+  have hmR : (1:ℝ) ≤ (m:ℝ) := by exact_mod_cast hm
+  have hmpos : (0:ℝ) < (m:ℝ) := by linarith
+  have hsqrtm1 : (1:ℝ) ≤ Real.sqrt (m:ℝ) := by
+    rw [show (1:ℝ) = Real.sqrt 1 by simp]
+    exact Real.sqrt_le_sqrt hmR
+  set Δ : ℝ := lam * Real.sqrt (m:ℝ) with hΔdef
+  have hΔge : lam ≤ Δ := by rw [hΔdef]; nlinarith [hsqrtm1]
+  have hΔ : (1:ℝ)/2 ≤ Δ := by linarith
+  have hΔpos : 0 < Δ := by linarith
+  have hlog2pos : 0 < Real.log 2 := Real.log_pos (by norm_num)
+  have hΔsq : Δ^2 = lam^2 * (m:ℝ) := by
+    rw [hΔdef, mul_pow, Real.sq_sqrt (Nat.cast_nonneg m)]
+  have key_identity : ∀ (y:ℝ), (Δ*y)^2/(2*(m:ℝ)) = lam^2*y^2/2 := by
+    intro y
+    rw [mul_pow, hΔsq]
+    field_simp
+  have hexp_eq : ∀ (j:ℤ),
+      (-(Δ*(2*|(j:ℝ)|-1))^2/(2*(m:ℝ))) = (-(lam^2*(2*|(j:ℝ)|-1)^2/2)) := by
+    intro j
+    rw [neg_div, key_identity (2*|(j:ℝ)|-1)]
+  have hqbound : ∀ (j:ℤ), j ≠ 0 →
+      ((univ.filter (fun ω => shellIdx Δ a ω = j)).card : ℝ) / (2:ℝ)^m
+        ≤ 2 * Real.exp (-(lam^2*(2*|(j:ℝ)|-1)^2/2)) := by
+    intro j hj
+    rw [← hexp_eq j]
+    exact shellIdx_prob_le Δ a h01 hΔpos hj
+  unfold shannonEntropy
+  set f : ℝ → ℝ := fun p => if p = 0 then (0:ℝ) else p * Real.logb 2 (1 / p) with hfdef
+  rw [shellFin_sum_eq_int_sum Δ a h01 hΔ f]
+  set P : ℤ → ℝ := fun j => ((univ.filter (fun ω => shellIdx Δ a ω = j)).card : ℝ) / (2:ℝ)^m
+    with hPdef
+  set N : ℕ := m + 1 with hNdef
+  have hIccEq : Finset.Icc (-((m:ℤ)+1)) ((m:ℤ)+1) = Finset.Icc (-(N:ℤ)) (N:ℤ) := by
+    have h1 : (-((m:ℤ)+1)) = (-(N:ℤ)) := by rw [hNdef]; push_cast; ring
+    have h2 : ((m:ℤ)+1) = (N:ℤ) := by rw [hNdef]; push_cast; ring
+    rw [h1, h2]
+  rw [hIccEq]
+  have h0mem : (0:ℤ) ∈ Finset.Icc (-(N:ℤ)) (N:ℤ) := by
+    rw [Finset.mem_Icc]
+    have : (0:ℤ) ≤ (N:ℤ) := Int.natCast_nonneg N
+    omega
+  have hins : Finset.Icc (-(N:ℤ)) (N:ℤ)
+      = insert (0:ℤ) ((Finset.Icc (-(N:ℤ)) (N:ℤ)).erase 0) := (Finset.insert_erase h0mem).symm
+  have hsum_one : ∑ j ∈ Finset.Icc (-(N:ℤ)) (N:ℤ), P j = 1 := by
+    have hid := shellFin_sum_eq_int_sum Δ a h01 hΔ id
+    simp only [id_eq] at hid
+    rw [hIccEq] at hid
+    rw [← hid]
+    exact sum_empiricalProb (shellFin Δ a)
+  have hnotmem : (0:ℤ) ∉ (Finset.Icc (-(N:ℤ)) (N:ℤ)).erase 0 := by simp
+  rw [hins, Finset.sum_insert hnotmem] at hsum_one ⊢
+  have hP0_eq : 1 - P 0 = ∑ j ∈ (Finset.Icc (-(N:ℤ)) (N:ℤ)).erase 0, P j := by
+    linarith [hsum_one]
+  have hPnonneg : ∀ j : ℤ, 0 ≤ P j := by
+    intro j
+    rw [hPdef]
+    exact div_nonneg (Nat.cast_nonneg _) (pow_nonneg (by norm_num) m)
+  -- Reusable bound on Σ_{erase 0} q_j (q_j := 2·exp(-λ²(2|j|-1)²/2))
+  have hq_erase_le : ∑ j ∈ (Finset.Icc (-(N:ℤ)) (N:ℤ)).erase 0,
+      2*Real.exp (-(lam^2*(2*|(j:ℝ)|-1)^2/2)) ≤ (64/15) * Real.exp (-lam^2/4) := by
+    rw [sum_erase_zero_Icc_eq N (fun j => 2*Real.exp (-(lam^2*(2*|(j:ℝ)|-1)^2/2)))]
+    have hterm : ∀ k ∈ Finset.Icc (1:ℤ) (N:ℤ),
+        (2*Real.exp (-(lam^2*(2*|(k:ℝ)|-1)^2/2))
+          + 2*Real.exp (-(lam^2*(2*|((-k:ℤ):ℝ)|-1)^2/2)))
+        ≤ 4*Real.exp (-(lam^2*(2*(k:ℝ)-1)^2)/4) := by
+      intro k hk
+      rw [Finset.mem_Icc] at hk
+      have hkpos : (0:ℝ) ≤ (k:ℝ) := by exact_mod_cast (by linarith : (0:ℤ) ≤ k)
+      have hkabs : |(k:ℝ)| = (k:ℝ) := abs_of_nonneg hkpos
+      have hnegk : ((-k:ℤ):ℝ) = -(k:ℝ) := by push_cast; ring
+      have hnegkabs : |((-k:ℤ):ℝ)| = (k:ℝ) := by rw [hnegk, abs_neg, hkabs]
+      rw [hkabs, hnegkabs]
+      have h6a := sq_two_mul_sub_one_ge (k:ℝ)
+      have hprod : lam^2/4 * (4*(k:ℝ) - 3) ≤ lam^2/4 * (2*(k:ℝ)-1)^2 :=
+        mul_le_mul_of_nonneg_left h6a (by positivity)
+      have hhalf : -(lam^2*(2*(k:ℝ)-1)^2/2) ≤ -(lam^2*(2*(k:ℝ)-1)^2)/4 := by nlinarith
+      have hexple : Real.exp (-(lam^2*(2*(k:ℝ)-1)^2/2)) ≤ Real.exp (-(lam^2*(2*(k:ℝ)-1)^2)/4) :=
+        Real.exp_le_exp.mpr hhalf
+      linarith [hexple]
+    calc ∑ k ∈ Finset.Icc (1:ℤ) (N:ℤ),
+          (2*Real.exp (-(lam^2*(2*|(k:ℝ)|-1)^2/2)) + 2*Real.exp (-(lam^2*(2*|((-k:ℤ):ℝ)|-1)^2/2)))
+        ≤ ∑ k ∈ Finset.Icc (1:ℤ) (N:ℤ), 4*Real.exp (-(lam^2*(2*(k:ℝ)-1)^2)/4) := Finset.sum_le_sum hterm
+      _ = 4 * ∑ k ∈ Finset.Icc (1:ℤ) (N:ℤ), Real.exp (-(lam^2*(2*(k:ℝ)-1)^2)/4) := by
+          rw [Finset.mul_sum]
+      _ = 4 * ∑ k ∈ Finset.Icc 1 N, Real.exp (-(lam^2*(2*(k:ℝ)-1)^2)/4) := by
+          congr 1
+          rw [sum_Icc_int_nat_eq N (fun k => Real.exp (-(lam^2*(2*(k:ℝ)-1)^2)/4))]
+          apply Finset.sum_congr rfl
+          intro k _
+          congr 1
+      _ ≤ 4 * ((16/15) * Real.exp (-lam^2/4)) :=
+          mul_le_mul_of_nonneg_left (peripheral_geom_sum_le lam hlam N) (by norm_num)
+      _ = (64/15) * Real.exp (-lam^2/4) := by ring
+  have hperiph_prob_le : ∑ j ∈ (Finset.Icc (-(N:ℤ)) (N:ℤ)).erase 0, P j
+      ≤ (64/15) * Real.exp (-lam^2/4) := by
+    calc ∑ j ∈ (Finset.Icc (-(N:ℤ)) (N:ℤ)).erase 0, P j
+        ≤ ∑ j ∈ (Finset.Icc (-(N:ℤ)) (N:ℤ)).erase 0,
+            2*Real.exp (-(lam^2*(2*|(j:ℝ)|-1)^2/2)) := by
+          apply Finset.sum_le_sum
+          intro j hj
+          rw [Finset.mem_erase] at hj
+          exact hqbound j hj.1
+      _ ≤ (64/15) * Real.exp (-lam^2/4) := hq_erase_le
+  have hcentral : f (P 0) ≤ (64/15)/Real.log 2 * Real.exp (-lam^2/4) := by
+    calc f (P 0) ≤ (1 - P 0)/Real.log 2 :=
+          central_entropyTerm_le (P 0) (hPnonneg 0)
+      _ = (∑ j ∈ (Finset.Icc (-(N:ℤ)) (N:ℤ)).erase 0, P j)/Real.log 2 := by rw [hP0_eq]
+      _ ≤ ((64/15) * Real.exp (-lam^2/4))/Real.log 2 :=
+          div_le_div_of_nonneg_right hperiph_prob_le hlog2pos.le
+      _ = (64/15)/Real.log 2 * Real.exp (-lam^2/4) := by ring
+  have hperiph : ∑ j ∈ (Finset.Icc (-(N:ℤ)) (N:ℤ)).erase 0, f (P j)
+      ≤ (64/15)/Real.log 2 * Real.exp (-lam^2/4) := by
+    calc ∑ j ∈ (Finset.Icc (-(N:ℤ)) (N:ℤ)).erase 0, f (P j)
+        ≤ ∑ j ∈ (Finset.Icc (-(N:ℤ)) (N:ℤ)).erase 0,
+            (2*Real.exp (-(lam^2*(2*|(j:ℝ)|-1)^2/2))) * (lam^2*(2*|(j:ℝ)|-1)^2) / (2*Real.log 2) := by
+          apply Finset.sum_le_sum
+          intro j hj
+          rw [Finset.mem_erase] at hj
+          exact peripheral_entropyTerm_le lam hlam hj.1 (P j) (hPnonneg j)
+            (hqbound j hj.1)
+      _ ≤ (64/15)/Real.log 2 * Real.exp (-lam^2/4) := by
+          rw [sum_erase_zero_Icc_eq N (fun j =>
+            (2*Real.exp (-(lam^2*(2*|(j:ℝ)|-1)^2/2))) * (lam^2*(2*|(j:ℝ)|-1)^2) / (2*Real.log 2))]
+          have hterm : ∀ k ∈ Finset.Icc (1:ℤ) (N:ℤ),
+              ((2*Real.exp (-(lam^2*(2*|(k:ℝ)|-1)^2/2))) * (lam^2*(2*|(k:ℝ)|-1)^2) / (2*Real.log 2)
+                + (2*Real.exp (-(lam^2*(2*|((-k:ℤ):ℝ)|-1)^2/2)))
+                    * (lam^2*(2*|((-k:ℤ):ℝ)|-1)^2) / (2*Real.log 2))
+              ≤ 4*Real.exp (-(lam^2*(2*(k:ℝ)-1)^2)/4) / Real.log 2 := by
+            intro k hk
+            rw [Finset.mem_Icc] at hk
+            have hkpos : (0:ℝ) ≤ (k:ℝ) := by exact_mod_cast (by linarith : (0:ℤ) ≤ k)
+            have hkabs : |(k:ℝ)| = (k:ℝ) := abs_of_nonneg hkpos
+            have hnegk : ((-k:ℤ):ℝ) = -(k:ℝ) := by push_cast; ring
+            have hnegkabs : |((-k:ℤ):ℝ)| = (k:ℝ) := by rw [hnegk, abs_neg, hkabs]
+            rw [hkabs, hnegkabs]
+            set X : ℝ := lam^2*(2*(k:ℝ)-1)^2 with hXdef
+            have hXnn : 0 ≤ X := by rw [hXdef]; positivity
+            have hXexp4 : X * Real.exp (-X/4) ≤ 2 := by
+              have hkey := one_add_mul_exp_neg_le X hXnn
+              nlinarith [hkey, Real.exp_pos (-X/4)]
+            have hexp_split : Real.exp (-(X/2)) = Real.exp (-X/4) * Real.exp (-X/4) := by
+              rw [← Real.exp_add]; congr 1; ring
+            have hXX : X * Real.exp (-(X/2)) ≤ 2 * Real.exp (-X/4) := by
+              rw [hexp_split, ← mul_assoc]
+              exact mul_le_mul_of_nonneg_right hXexp4 (Real.exp_pos _).le
+            have heq : (2*Real.exp (-(X/2))) * X / (2*Real.log 2)
+                = (X * Real.exp (-(X/2))) / Real.log 2 := by field_simp
+            have hbound1 : (2*Real.exp (-(X/2))) * X / (2*Real.log 2)
+                ≤ 2*Real.exp (-X/4) / Real.log 2 := by
+              rw [heq]
+              exact div_le_div_of_nonneg_right hXX hlog2pos.le
+            have hdouble2 : (X * Real.exp (-(X/2)))/Real.log 2 + (X * Real.exp (-(X/2)))/Real.log 2
+                = 2*(X*Real.exp (-(X/2)))/Real.log 2 := by ring
+            have : 2*(X*Real.exp (-(X/2)))/Real.log 2 ≤ 4*Real.exp (-X/4) / Real.log 2 := by
+              rw [div_le_div_iff₀ hlog2pos hlog2pos]
+              nlinarith [hXX, hlog2pos]
+            linarith [heq, hdouble2, this]
+          calc ∑ k ∈ Finset.Icc (1:ℤ) (N:ℤ),
+                ((2*Real.exp (-(lam^2*(2*|(k:ℝ)|-1)^2/2))) * (lam^2*(2*|(k:ℝ)|-1)^2) / (2*Real.log 2)
+                  + (2*Real.exp (-(lam^2*(2*|((-k:ℤ):ℝ)|-1)^2/2)))
+                      * (lam^2*(2*|((-k:ℤ):ℝ)|-1)^2) / (2*Real.log 2))
+              ≤ ∑ k ∈ Finset.Icc (1:ℤ) (N:ℤ), 4*Real.exp (-(lam^2*(2*(k:ℝ)-1)^2)/4) / Real.log 2 :=
+                Finset.sum_le_sum hterm
+            _ = (4/Real.log 2) * ∑ k ∈ Finset.Icc (1:ℤ) (N:ℤ),
+                  Real.exp (-(lam^2*(2*(k:ℝ)-1)^2)/4) := by
+                rw [Finset.mul_sum]
+                apply Finset.sum_congr rfl
+                intro k _
+                ring
+            _ = (4/Real.log 2) * ∑ k ∈ Finset.Icc 1 N, Real.exp (-(lam^2*(2*(k:ℝ)-1)^2)/4) := by
+                congr 1
+                rw [sum_Icc_int_nat_eq N (fun k => Real.exp (-(lam^2*(2*(k:ℝ)-1)^2)/4))]
+                apply Finset.sum_congr rfl
+                intro k _
+                congr 1
+            _ ≤ (4/Real.log 2) * ((16/15) * Real.exp (-lam^2/4)) :=
+                mul_le_mul_of_nonneg_left (peripheral_geom_sum_le lam hlam N) (by positivity)
+            _ = (64/15)/Real.log 2 * Real.exp (-lam^2/4) := by ring
+  have hgoal12 : (64/15)/Real.log 2 * Real.exp (-lam^2/4) + (64/15)/Real.log 2 * Real.exp (-lam^2/4)
+      ≤ (12/Real.log 2) * Real.exp (-lam^2/4) := by
+    have hexppos : 0 < Real.exp (-lam^2/4) := Real.exp_pos _
+    have heq1 : (64/15)/Real.log 2 * Real.exp (-lam^2/4) + (64/15)/Real.log 2 * Real.exp (-lam^2/4)
+        = (128/15) * (Real.exp (-lam^2/4) / Real.log 2) := by ring
+    have heq2 : (12/Real.log 2) * Real.exp (-lam^2/4) = 12 * (Real.exp (-lam^2/4) / Real.log 2) := by
+      ring
+    rw [heq1, heq2]
+    exact mul_le_mul_of_nonneg_right (by norm_num) (div_nonneg hexppos.le hlog2pos.le)
+  linarith [hcentral, hperiph, hgoal12]
+
 end
