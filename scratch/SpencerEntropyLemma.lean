@@ -551,4 +551,33 @@ lemma shellFin_sum_eq_int_sum (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j 
   · intro k _
     rw [empiricalProb_shellFin Δ a h01 hΔ k]
 
+/-- The remaining half of step 4: pair up `j` and `-j` in a sum over
+`Icc (-N) N` with `0` removed, folding it into a sum over `Icc 1 N`. Pure
+integer combinatorics, no probability content. -/
+lemma sum_erase_zero_Icc_eq (N : ℕ) (h : ℤ → ℝ) :
+    ∑ j ∈ (Finset.Icc (-(N:ℤ)) (N:ℤ)).erase 0, h j
+      = ∑ k ∈ Finset.Icc (1:ℤ) (N:ℤ), (h k + h (-k)) := by
+  have hsplit : (Finset.Icc (-(N:ℤ)) (N:ℤ)).erase 0
+      = Finset.Icc (-(N:ℤ)) (-1) ∪ Finset.Icc (1:ℤ) (N:ℤ) := by
+    ext x
+    simp only [Finset.mem_erase, Finset.mem_Icc, Finset.mem_union]
+    omega
+  have hdisj : Disjoint (Finset.Icc (-(N:ℤ)) (-1)) (Finset.Icc (1:ℤ) (N:ℤ)) := by
+    rw [Finset.disjoint_left]
+    intro x hx1 hx2
+    rw [Finset.mem_Icc] at hx1 hx2
+    omega
+  rw [hsplit, Finset.sum_union hdisj]
+  have hneg : ∑ x ∈ Finset.Icc (-(N:ℤ)) (-1), h x = ∑ k ∈ Finset.Icc (1:ℤ) (N:ℤ), h (-k) := by
+    apply Finset.sum_nbij' (i := fun x : ℤ => -x) (j := fun x : ℤ => -x)
+    · intro x hx; rw [Finset.mem_Icc] at hx ⊢; omega
+    · intro x hx; rw [Finset.mem_Icc] at hx ⊢; omega
+    · intro x _; ring
+    · intro x _; ring
+    · intro x _; rw [neg_neg]
+  rw [hneg, ← Finset.sum_add_distrib]
+  apply Finset.sum_congr rfl
+  intro x _
+  ring
+
 end
