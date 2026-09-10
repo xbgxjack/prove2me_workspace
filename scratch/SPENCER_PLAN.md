@@ -178,6 +178,33 @@ its derivative, similar to how `strictConcave_binEntropy` was derived), then do
 the finite-sum reindexing (step 4, `Finset.sum_nbij'`, same pattern used
 repeatedly in the Katona/Kleitman work), then combine everything (steps 1,3,7).
 
+**STATUS (steps 2, 5, 6a DONE, formalized in `scratch/SpencerEntropyLemma.lean`,
+compiles clean with zero sorries as of the commit adding `peripheral_entropyTerm_le`):**
+- Step 5: `key_exp_bound` (`1+4Y ≤ 2exp(Y)` for `Y≥0`, via `Real.add_one_le_exp`
+  shifted by `log 2` and the numeric fact `Real.log_two_lt_d9 : log 2 <
+  0.6931471808 < 3/4`) and `one_add_mul_exp_neg_le` (the needed form
+  `(1+X)exp(-X/4) ≤ 2` for `X≥0`).
+- Step 6a: `sq_two_mul_sub_one_ge` (`(2k-1)² ≥ 4k-3` for all real `k`).
+- Step 2: `entropyTerm_eq_negMulLog_div` (the entropy-term
+  `if p=0 then 0 else p·logb2(1/p)` equals `negMulLog(p)/log 2` for EVERY real
+  `p`, junk values included — a clean identity that unlocks Mathlib's whole
+  `negMulLog` toolkit for entropy terms), `negMulLog_strictMonoOn` (`negMulLog`
+  strictly increasing on `[0, 1/e]`, via `strictMonoOn_of_deriv_pos` and its
+  derivative `-log x - 1`), and `peripheral_entropyTerm_le` (the full step-2
+  conclusion: for `λ≥2`, `j≠0`, `0≤p≤q_j := 2exp(-λ²(2|j|-1)²/2)`, the entropy
+  term of `p` is `≤ q_j·λ²(2|j|-1)²/(2 log 2)`).
+
+**Still remaining**: step 1 (central term, via `Real.negMulLog_le_one_sub_self`
+— should be quick), step 6b (the geometric-series comparison — needs `tsum`
+machinery: `tsum_geometric_of_lt_one`, `tsum_le_tsum` for the termwise
+comparison via step 6a, and the `λ≥2` numeric simplification to `≤1.02
+e^{-λ²/4}`), step 4 (the `±j` reindexing of the finite sum over `shellFin`'s
+range via `Finset.sum_nbij'`), and the final assembly combining steps 1-7 into
+`shannonEntropy (shellFin Δ a) ≤ (12/log 2)·exp(-λ²/4)`. Suggested next order:
+step 1 (quick), then step 6b (self-contained), then step 4 + final assembly
+together (they're intertwined — the reindexing IS the last algebraic step
+before assembly).
+
 ## Current state of scratch/SpencerEntropyLemma.lean (compiles clean, no sorries)
 
 - `RSign`, `rowSumB`: the ±1 coloring and 0/1-weighted row sum on `Fin m → Bool`.
