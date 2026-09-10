@@ -205,6 +205,88 @@ step 1 (quick), then step 6b (self-contained), then step 4 + final assembly
 together (they're intertwined — the reindexing IS the last algebraic step
 before assembly).
 
+**UPDATE 2 — ALL SEVEN STEPS NOW FORMALIZED, only final assembly left.**
+Since the note above, every remaining named step got proven and pushed
+(commits through `7e5a418`), all compiling clean with zero sorries:
+- Step 1: `central_entropyTerm_le`.
+- Step 6b: `geom_partial_sum_eq`, `geom_partial_sum_le`, `peripheral_geom_sum_le`
+  (`Σ_{k=1}^N exp(-λ²(2k-1)²/4) ≤ (16/15)·exp(-λ²/4)` for `λ≥2`, proven via
+  elementary `exp(1)≥2 ⟹ exp(4)≥16 ⟹ exp(-λ²)≤1/16` — no tsum needed, plain
+  finite geometric partial sums suffice since the target sum is already finite).
+- Step 4 (part 1): `shellFin_sum_eq_int_sum` — reindexes the `shannonEntropy`
+  sum over `shellFin`'s `Fin (2m+3)` to a sum over `j ∈ Icc (-(m+1)) (m+1)`.
+  This was the hardest mechanical obstacle this session (a fiddly `Fin ℕ`/`ℤ`
+  coercion argument inside `Finset.sum_nbij'` — many failed attempts with
+  `omega` choking on `Int.toNat`/`%` nested inside a literal `Fin.mk`; the fix
+  that finally worked: after `apply Fin.ext; dsimp only`, use an explicit
+  `ring`-proved `have` to collapse the `-(m+1)+(m+1)` cancellation, an
+  explicit `have hcast : (k:ℤ).toNat = (k:ℕ)` proved via
+  `Int.toNat_of_nonneg` + `exact_mod_cast` and `rw`'d in by hand, and
+  `Nat.mod_eq_of_lt` (NOT `omega`) for the final step — `omega` alone
+  reliably failed to see through the compound expression despite having
+  every fact it needed in context; diagnosed via a `guard_target = True`
+  trick to dump the exact pretty-printed goal rather than guessing further).
+- Step 4 (part 2): `sum_erase_zero_Icc_eq` — folds a sum over
+  `Icc (-N) N \ {0}` into `Σ_{k=1}^N (h k + h (-k))` via the negation
+  involution. Pure integer combinatorics, no probability content, much
+  cleaner than the `Fin` step above (no coercion pain since everything
+  stays in `ℤ`).
+
+**The final assembly recipe (numeric bookkeeping fully worked out, NOT yet
+formalized — this is the one remaining piece):**
+
+Parametrize `Δ := λ·√m` (so `Δ² = λ²m` via `Real.sq_sqrt`, which makes
+`shellIdx_prob_le`'s bound `2exp(-(Δ(2|j|-1))²/(2m))` equal EXACTLY
+`peripheral_entropyTerm_le`'s `q_j = 2exp(-λ²(2|j|-1)²/2)` — check this
+algebraic identity carefully when formalizing, it's the linchpin connecting
+the two halves of the file). Require `hm : 1 ≤ m` so `Δ ≥ λ√1 = λ ≥ 2 ≥ 1/2`
+(needed for `hΔ` throughout).
+
+1. `shannonEntropy (shellFin Δ a) = Σ_{j∈Icc(-(m+1))(m+1)} f(P_j)` via
+   `shellFin_sum_eq_int_sum` (where `f p := if p=0 then 0 else p·logb2(1/p)`,
+   `P_j` the raw Finset-counting probability).
+2. Split off `j=0` via `Finset.sum_erase_add` (or `Finset.add_sum_erase`):
+   `= f(P_0) + Σ_{j∈erase 0} f(P_j)`.
+3. Central term: `f(P_0) ≤ (1-P_0)/log2` via `central_entropyTerm_le`.
+   Bound `1-P_0 = Σ_{j≠0} P_j ≤ Σ_{j≠0} q_j` (termwise via `shellIdx_prob_le`,
+   noting `q_j = 2exp(-λ²(2|j|-1)²/2) ≤ 2exp(-λ²(2|j|-1)²/4)` trivially since
+   the exponent is more negative) `= 2·Σ_{k=1}^{m+1} 2exp(-λ²(2k-1)²/4)` via
+   `sum_erase_zero_Icc_eq` (h(j):=q_j depends only on |j|, so h(k)+h(-k)=2h(k))
+   `≤ 4·(16/15)exp(-λ²/4)` via `peripheral_geom_sum_le`
+   `= (64/15)exp(-λ²/4)`. So central term `≤ (64/15)/log2 · exp(-λ²/4)`.
+4. Peripheral part: `Σ_{j≠0} f(P_j) ≤ Σ_{j≠0} q_j·λ²(2|j|-1)²/(2log2)` termwise
+   via `peripheral_entropyTerm_le`, `= 2·Σ_{k=1}^{m+1} q_k·λ²(2k-1)²/(2log2)`
+   via `sum_erase_zero_Icc_eq` again. Each summand
+   `q_k·λ²(2k-1)²/(2log2) = X·exp(-X/2)/log2` where `X:=λ²(2k-1)²`
+   `≤ (1+X)exp(-X/2)/log2` (trivial, `X≤1+X`)
+   `= (1+X)exp(-X/4)·exp(-X/4)/log2 ≤ 2exp(-X/4)/log2` via
+   `one_add_mul_exp_neg_le` (this is EXACTLY step 5, matches `X=λ²(2k-1)²`,
+   note the lemma's `X` is `4×` the `X` used when calling it — double check
+   this substitution carefully when formalizing)
+   `= 2exp(-λ²(2k-1)²/4)/log2`. Summing: `≤ 2·(16/15)exp(-λ²/4)/log2` via
+   `peripheral_geom_sum_le`. Doubled (±k): `≤ 2·2·(16/15)/log2·exp(-λ²/4)
+   = (64/15)/log2·exp(-λ²/4)`.
+5. Total: `H(Z) ≤ [(64/15)+(64/15)]/log2 · exp(-λ²/4) = (128/15)/log2·exp(-λ²/4)`.
+   Since `128/15 = 8.5333... < 12`, this proves the target
+   `H(Z) ≤ (12/log2)·exp(-λ²/4)` with room to spare (use `nlinarith`/`linarith`
+   for this final numeric slack, no need to match constants tightly).
+
+**Practical warning for whoever formalizes this**: steps 3 and 4 both need
+`Finset.sum_le_sum` (termwise ≤) applied to sums indexed by `Icc(-(m+1))(m+1)`
+BEFORE calling `sum_erase_zero_Icc_eq` (which reindexes an EQUALITY, not an
+inequality) — so the order per branch is: split off j=0 (`Finset.sum_erase_add`),
+bound the `erase 0` sum termwise via `Finset.sum_le_sum` using
+`shellIdx_prob_le`/`peripheral_entropyTerm_le` (both apply to the RAW `P_j`
+sum, giving a sum of explicit real-number bounds), THEN apply
+`sum_erase_zero_Icc_eq` to the RESULTING bound-sum (whose summand is now a
+plain function of `j`, e.g. `q_j` or `q_j·λ²(2|j|-1)²/(2log2)`), not to the
+original probability sum. Also: `shellIdx_prob_le`'s hypothesis is
+`Δ > 0` and its conclusion has `Δ` explicit, while `peripheral_entropyTerm_le`
+is stated directly in terms of `lam` — the bridging identity
+`(Δ*(2|j|-1))^2/(2m) = lam^2*(2|j|-1)^2/2` (via `Δ=lam*√m`) needs to be
+proven ONCE as a `have` and reused for both the central and peripheral
+branches (both ultimately reduce to the same `q_j` bound).
+
 ## Current state of scratch/SpencerEntropyLemma.lean (compiles clean, no sorries)
 
 - `RSign`, `rowSumB`: the ±1 coloring and 0/1-weighted row sum on `Fin m → Bool`.
