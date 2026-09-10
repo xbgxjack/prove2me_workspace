@@ -1520,3 +1520,60 @@ theorem lemma8_partial_coloring_round (n : ℕ) (a : Fin n → Fin m → ℝ)
   linarith [hdiff]
 
 end
+
+/-! ## The outer geometric iteration: telescoping-sum bound
+
+`lemma8_partial_coloring_round` gives ONE round's contribution
+`λ(m)·√m` where `λ(m)` is chosen fresh from whatever the ACTUAL active
+size `m` happens to be at that round (never from a pre-committed
+round-index guess — the active size can shrink faster than the
+guaranteed 10% per round, and a λ sized for an over-estimate of `m`
+would be too small for the real, smaller `m`). Iterating from `m₀ = n`
+down through active sizes `m₀ ≥ m₁ ≥ m₂ ≥ …`, each satisfying
+`m_{k+1} ≤ 0.9·m_k` (guaranteed by Lemma 8, regardless of how much
+extra got colored), the total row bound is `Σ_k λ(m_k)·√(m_k)`.
+
+Since `λ(m)·√m` is monotone increasing in `m` (checked: for `m ≤ n`,
+`m·ln(C/m)` is increasing whenever `m < C/e`, which holds throughout
+since `C := 120n/log2 ≈ 173n ≫ n·e`), and `m_k ≤ n·0.9^k` (a genuine
+upper bound, provable by a simple induction, unaffected by rounds
+over-performing), we get `λ(m_k)·√(m_k) ≤ λ(n·0.9^k)·√(n·0.9^k)`
+termwise — so the (variable-length, run-dependent) actual sum is
+bounded by the sum of this explicit, IDEALIZED round-indexed sequence,
+for ANY number of terms. That idealized sum is what's bounded below:
+it decays geometrically (`0.9^{k/2}`) despite `λ` growing like
+`√(log(1/0.9^k))` — a genuinely converging series, bounded here via
+comparison to a arithmetic-geometric series `Σ(k+1)r^k`, which has a
+clean closed form. -/
+
+noncomputable section
+
+/-- The λ that makes `lemma8_partial_coloring_round`'s entropy budget
+`n·(12/log2)·exp(-λ²/4) ≤ m/10` hold with EQUALITY at active size `m`
+(for fixed total row count `n`). -/
+def iterLam (n m : ℝ) : ℝ := 2 * Real.sqrt (Real.log (120*n/(m*Real.log 2)))
+
+/-- The per-round row-bound contribution `λ(m)·√m`. -/
+def iterX (n m : ℝ) : ℝ := iterLam n m * Real.sqrt m
+
+/-- `iterLam` exactly saturates the entropy budget: plugging it into
+`lemma8_partial_coloring_round`'s hypothesis gives equality, hence `≤`. -/
+lemma iterLam_budget_eq (n m : ℝ) (hn : 0 < n) (hm : 0 < m) (hmn : m ≤ n) :
+    n * ((12/Real.log 2) * Real.exp (-(iterLam n m)^2/4)) = m/10 := by
+  have hlog2pos : 0 < Real.log 2 := Real.log_pos (by norm_num)
+  have hlog2lt1 : Real.log 2 < 1 := by linarith [Real.log_two_lt_d9]
+  have hCpos : 0 < 120*n/(m*Real.log 2) := by positivity
+  unfold iterLam
+  rw [show (2 * Real.sqrt (Real.log (120*n/(m*Real.log 2))))^2
+      = 4 * Real.log (120*n/(m*Real.log 2)) by
+        rw [mul_pow, Real.sq_sqrt (Real.log_nonneg ?_)]
+        · ring
+        · rw [le_div_iff₀ (by positivity : (0:ℝ) < m*Real.log 2)]
+          nlinarith [hn, hm, hmn, hlog2pos, hlog2lt1,
+            mul_le_mul_of_nonneg_left hlog2lt1.le hm.le]]
+  rw [show -(4 * Real.log (120*n/(m*Real.log 2)))/4 = -Real.log (120*n/(m*Real.log 2)) by ring,
+    Real.exp_neg, Real.exp_log hCpos]
+  field_simp
+  ring
+
+end
