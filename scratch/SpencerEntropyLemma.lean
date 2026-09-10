@@ -1,4 +1,5 @@
 import Mathlib
+import Definitions.Def_DiscreteEntropy
 
 open Finset MeasureTheory ProbabilityTheory
 
@@ -184,5 +185,54 @@ lemma rowSumB_tail_bound (m : ℕ) (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨
         measureReal_union_le _ _
     _ ≤ Real.exp (-t^2 / (2 * m)) + Real.exp (-t^2 / (2 * m)) := add_le_add hpos hneg
     _ = 2 * Real.exp (-t^2 / (2 * m)) := by ring
+
+/-- The shell index, packaged into a fixed-size `Fin` type via a shift and a
+(never-triggered, for `Δ ≥ 1/2`) safety `%`. -/
+def shellFin (Δ : ℝ) (a : Fin m → ℝ) (ω : Fin m → Bool) : Fin (2*m+3) :=
+  ⟨(shellIdx Δ a ω + (m+1)).toNat % (2*m+3), Nat.mod_lt _ (by omega)⟩
+
+lemma shellFin_eq_toNat (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j = 1)
+    (hΔ : (1:ℝ)/2 ≤ Δ) (ω : Fin m → Bool) :
+    (shellFin Δ a ω : ℕ) = (shellIdx Δ a ω + (m+1)).toNat := by
+  have hΔpos : 0 < Δ := by linarith
+  have hb := shellIdx_bound Δ a h01 hΔpos ω
+  rw [Set.mem_Icc] at hb
+  have hle : (m:ℝ)/(2*Δ) ≤ m := by
+    rw [div_le_iff₀ (by positivity)]
+    nlinarith [hΔ, (Nat.cast_nonneg m : (0:ℝ) ≤ m)]
+  have hub : (shellIdx Δ a ω : ℝ) ≤ m + 1 := by linarith [hb.2, hle]
+  have hlb : -(((m:ℝ)) + 1) ≤ (shellIdx Δ a ω : ℝ) := by linarith [hb.1, hle]
+  have hub' : shellIdx Δ a ω ≤ (m:ℤ) + 1 := by exact_mod_cast hub
+  have hlb' : -((m:ℤ) + 1) ≤ shellIdx Δ a ω := by exact_mod_cast hlb
+  have hnn : 0 ≤ shellIdx Δ a ω + (m+1) := by omega
+  have hsmall : (shellIdx Δ a ω + (m+1)).toNat < 2*m+3 := by omega
+  unfold shellFin
+  simp only
+  exact Nat.mod_eq_of_lt hsmall
+
+lemma shellFin_injOn (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j = 1)
+    (hΔ : (1:ℝ)/2 ≤ Δ) {ω ω' : Fin m → Bool}
+    (heq : shellFin Δ a ω = shellFin Δ a ω') :
+    shellIdx Δ a ω = shellIdx Δ a ω' := by
+  have hΔpos : 0 < Δ := by linarith
+  have h1 := shellFin_eq_toNat Δ a h01 hΔ ω
+  have h2 := shellFin_eq_toNat Δ a h01 hΔ ω'
+  rw [Fin.ext_iff] at heq
+  rw [h1, h2] at heq
+  have hb1 := shellIdx_bound Δ a h01 hΔpos ω
+  have hb2 := shellIdx_bound Δ a h01 hΔpos ω'
+  rw [Set.mem_Icc] at hb1 hb2
+  have hle : (m:ℝ)/(2*Δ) ≤ m := by
+    rw [div_le_iff₀ (by positivity)]
+    nlinarith [hΔ, (Nat.cast_nonneg m : (0:ℝ) ≤ m)]
+  have hnn1 : 0 ≤ shellIdx Δ a ω + (m+1) := by
+    have : -(((m:ℝ)) + 1) ≤ (shellIdx Δ a ω : ℝ) := by linarith [hb1.1, hle]
+    have h' : -((m:ℤ) + 1) ≤ shellIdx Δ a ω := by exact_mod_cast this
+    omega
+  have hnn2 : 0 ≤ shellIdx Δ a ω' + (m+1) := by
+    have : -(((m:ℝ)) + 1) ≤ (shellIdx Δ a ω' : ℝ) := by linarith [hb2.1, hle]
+    have h' : -((m:ℤ) + 1) ≤ shellIdx Δ a ω' := by exact_mod_cast this
+    omega
+  omega
 
 end
