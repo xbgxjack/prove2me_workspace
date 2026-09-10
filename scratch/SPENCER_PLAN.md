@@ -1,5 +1,16 @@
 # Plan: proving Komlos.spencer_six_deviations (the 6√n bound)
 
+## STATUS: Lemma 9 is DONE.
+
+`shannonEntropy_shellFin_le` in `scratch/SpencerEntropyLemma.lean` (commit
+`4f75fc1`) is the fully assembled, zero-sorry theorem: for `Δ = λ√m` with
+`λ≥2`, `m≥1`, `shannonEntropy (shellFin Δ a) ≤ (12/log 2)·exp(-λ²/4)`. All
+seven steps of the hand-derived proof below are formalized and the whole
+file compiles clean. This is the hardest single piece of the joint-entropy
+route to Spencer's theorem — see "Remaining work" at the bottom of this file
+for what's left (the outer geometric iteration schedule and the final
+theorem assembly).
+
 ## The dead end (documented, don't repeat)
 
 `partial_coloring_via_kleitman` (already Proved) bounds *each row separately* via a
@@ -380,3 +391,24 @@ attack the sum above, testing incrementally.
    `sqrt(2·m_K·log(4n))` is a negligible addition, sum everything, and verify the
    total stays under `6√n` (or report the honestly-achieved constant if 6 exactly
    proves too delicate without Spencer's original paper's precise schedule).
+
+## Lemma 9 is exactly step 2 above, now DONE
+
+`shannonEntropy_shellFin_le` (per-row `H(Z_i) ≤ (12/log2)·exp(-λ²/4)`, applied
+to a single row's quantized sum) is precisely the `G(λ)` bound step 2 needs —
+our own constant `(12/log2)·exp(-λ²/4)` in place of Rothvoss's `10e^{-λ²/10}`,
+which is fine since we only need SOME workable bound, not his exact constants.
+Next concrete steps (not yet started):
+- Apply `shannonEntropy_pi_le` to combine `n` independent per-row applications
+  of `shannonEntropy_shellFin_le` into the joint bound `H(Z) ≤ n·(12/log2)e^{-λ²/4}`,
+  then choose `λ` (as a function of the CURRENT active size `m`, per step 2's
+  note above) so this is `≤ m/10`.
+- `shannonEntropy_pigeonhole` for the pigeonhole step (step 2 above).
+- Kleitman for the Hamming-distance step (step 3 above) — reuse
+  `kleitman_diameter`/Katona apparatus with the fixed `0.9`/`0.1` split.
+- The difference-construction step (step 4 above, analogous to but distinct
+  from the abandoned `partial_coloring_via_kleitman` approach — this time
+  using entropy-derived buckets, not Hamming-ball buckets).
+- The outer geometric iteration (step 5) and final assembly (step 6) —
+  the telescoping-series argument from Rothvoss's notes, formalizing
+  `Σ_k sqrt(m_k·log(2n/m_k)) = O(√n)`.
