@@ -338,4 +338,29 @@ with equality at `k=1`. Elementary: `(2k-1)² - (4k-3) = 4(k-1)² ≥ 0`. -/
 lemma sq_two_mul_sub_one_ge (k : ℝ) : 4*k - 3 ≤ (2*k-1)^2 := by
   nlinarith [sq_nonneg (k-1)]
 
+/-- The `shannonEntropy` per-outcome term `p ↦ if p = 0 then 0 else p * logb 2 (1/p)`
+coincides, for every real `p` (junk values included), with `negMulLog p / log 2`.
+This lets us reuse Mathlib's `negMulLog` toolkit (concavity, derivative,
+`negMulLog_le_one_sub_self`) directly for entropy terms. -/
+lemma entropyTerm_eq_negMulLog_div (p : ℝ) :
+    (if p = 0 then (0:ℝ) else p * Real.logb 2 (1 / p)) = Real.negMulLog p / Real.log 2 := by
+  by_cases h : p = 0
+  · simp [h]
+  · rw [if_neg h, ← Real.log_div_log, one_div, Real.log_inv]
+    unfold Real.negMulLog
+    ring
+
+/-- `negMulLog` is strictly increasing on `[0, 1/e]`, since its derivative
+`-log x - 1` is positive exactly when `x < 1/e`. -/
+lemma negMulLog_strictMonoOn : StrictMonoOn Real.negMulLog (Set.Icc 0 (Real.exp (-1))) := by
+  apply strictMonoOn_of_deriv_pos (convex_Icc _ _) Real.continuous_negMulLog.continuousOn
+  intro x hx
+  rw [interior_Icc, Set.mem_Ioo] at hx
+  obtain ⟨hx0, hx1⟩ := hx
+  rw [Real.deriv_negMulLog (ne_of_gt hx0)]
+  have hlogx : Real.log x < -1 := by
+    have := Real.log_lt_log hx0 hx1
+    rwa [Real.log_exp] at this
+  linarith
+
 end
