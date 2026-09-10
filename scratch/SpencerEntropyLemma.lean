@@ -305,4 +305,37 @@ lemma shellIdx_prob_le (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j = 1)
     _ ≤ 2 * Real.exp (-(Δ*(2*|(j:ℝ)|-1))^2 / (2*m)) :=
         rowSumB_tail_bound m a h01 (Δ*(2*|(j:ℝ)|-1)) (by nlinarith)
 
+/-- Step 5 of the entropy-sum derivation (see scratch/SPENCER_PLAN.md): the
+elementary bound `1 + 4Y ≤ 2·exp Y` for `Y ≥ 0`, via a shift of
+`Real.add_one_le_exp` by `log 2` together with the numeric fact `log 2 < 3/4`
+(`Real.log_two_lt_d9`). -/
+lemma key_exp_bound (Y : ℝ) (hY : 0 ≤ Y) : 1 + 4*Y ≤ 2*Real.exp Y := by
+  have h1 : 1 + (Y - Real.log 2) ≤ Real.exp (Y - Real.log 2) := by
+    linarith [Real.add_one_le_exp (Y - Real.log 2)]
+  have h2 : Real.exp (Y - Real.log 2) = Real.exp Y / 2 := by
+    rw [Real.exp_sub, Real.exp_log (by norm_num)]
+  rw [h2] at h1
+  have hlog2 : Real.log 2 < 3/4 := by
+    have := Real.log_two_lt_d9
+    linarith
+  linarith [h1, hlog2]
+
+/-- Step 5, in its needed form: `(1+X)·exp(-X/4) ≤ 2` for `X ≥ 0`. -/
+lemma one_add_mul_exp_neg_le (X : ℝ) (hX : 0 ≤ X) :
+    (1 + X) * Real.exp (-X/4) ≤ 2 := by
+  have hY : 0 ≤ X/4 := by linarith
+  have hb := key_exp_bound (X/4) hY
+  have hexp : Real.exp (X/4) > 0 := Real.exp_pos _
+  have h1X : 1 + X ≤ 2 * Real.exp (X/4) := by linarith
+  have heq : Real.exp (-X/4) = (Real.exp (X/4))⁻¹ := by
+    rw [show -X/4 = -(X/4) by ring, Real.exp_neg]
+  rw [heq]
+  rw [← div_eq_mul_inv, div_le_iff₀ hexp]
+  linarith [h1X]
+
+/-- Step 6a of the entropy-sum derivation: `(2k-1)² ≥ 4k-3` for every real `k`,
+with equality at `k=1`. Elementary: `(2k-1)² - (4k-3) = 4(k-1)² ≥ 0`. -/
+lemma sq_two_mul_sub_one_ge (k : ℝ) : 4*k - 3 ≤ (2*k-1)^2 := by
+  nlinarith [sq_nonneg (k-1)]
+
 end
