@@ -1669,3 +1669,101 @@ lemma iterX_sum_le (n : ℝ) (hn : 0 < n) (N : ℕ) :
         rw [div_pow, one_pow]; ring
 
 end
+
+/-! ## The Finset-indexed wrapper: avoiding cross-round `Fin` merging
+
+The inductive construction below needs to apply
+`lemma8_partial_coloring_round` to a SHRINKING SUBSET of a FIXED index
+type `Fin n` (never to a genuinely different `Fin m` at each level), so
+that combining one round's result with the recursive call's result never
+requires relating two unrelated `Fin` types — both live in `Fin n → ℝ`/
+`Fin n → Bool` throughout, and the "active set" is tracked as a
+`Finset (Fin n)` that only shrinks. This wrapper performs the (single,
+local) `Finset ≃ Fin card` conversion needed to invoke Lemma 8, then
+transports the result straight back to `Fin n`-indexed data. -/
+
+noncomputable section
+
+theorem lemma8_finset_round (n : ℕ) (S : Finset (Fin n)) (a : Fin n → Fin n → ℝ)
+    (h01 : ∀ i j, a i j = 0 ∨ a i j = 1) (hS : 1 ≤ S.card) (lam : ℝ) (hlam : 2 ≤ lam)
+    (hbudget : (n:ℝ) * ((12/Real.log 2) * Real.exp (-lam^2/4)) ≤ (S.card:ℝ)/10) :
+    ∃ χ : Fin n → ℝ, (∀ j, χ j = 0 ∨ χ j = 1 ∨ χ j = -1) ∧ (∀ j, j ∉ S → χ j = 0) ∧
+      2*(S.card/10) < (S.filter (fun j => χ j ≠ 0)).card ∧
+      ∀ i : Fin n, |∑ j ∈ S, a i j * χ j| ≤ lam * Real.sqrt (S.card:ℝ) := by
+  set e := S.equivFin with hedef
+  set a' : Fin n → Fin S.card → ℝ := fun i k => a i ((e.symm k : ↥S) : Fin n) with ha'def
+  have h01' : ∀ i (k : Fin S.card), a' i k = 0 ∨ a' i k = 1 := fun i k => h01 i _
+  obtain ⟨x, y, hdist, hbound⟩ := lemma8_partial_coloring_round n a' h01' hS lam hlam hbudget
+  set χ : Fin n → ℝ := fun j =>
+    if hj : j ∈ S then (RSign x (e ⟨j, hj⟩) - RSign y (e ⟨j, hj⟩))/2 else 0 with hχdef
+  have hinv1 : ∀ (j : Fin n) (hj : j ∈ S), ((e.symm (e ⟨j, hj⟩) : ↥S) : Fin n) = j :=
+    fun j hj => congrArg Subtype.val (e.symm_apply_apply ⟨j, hj⟩)
+  have hinv2 : ∀ (k : Fin S.card), e ⟨((e.symm k : ↥S) : Fin n), (e.symm k).2⟩ = k := by
+    intro k
+    have hcast : (⟨((e.symm k : ↥S) : Fin n), (e.symm k).2⟩ : ↥S) = e.symm k := Subtype.ext rfl
+    rw [hcast]
+    exact e.apply_symm_apply k
+  refine ⟨χ, ?_, ?_, ?_, ?_⟩
+  · intro j
+    by_cases hj : j ∈ S
+    · rw [hχdef]
+      simp only [dif_pos hj]
+      unfold RSign
+      rcases x (e ⟨j, hj⟩) <;> rcases y (e ⟨j, hj⟩) <;> norm_num
+    · rw [hχdef]; simp [dif_neg hj]
+  · intro j hj
+    rw [hχdef]; simp [dif_neg hj]
+  · have hcard : (S.filter (fun j => χ j ≠ 0)).card
+        = (univ.filter (fun k : Fin S.card => x k ≠ y k)).card := by
+      apply Finset.card_bij' (i := fun j hj => e ⟨j, (Finset.mem_filter.mp hj).1⟩)
+        (j := fun k _ => ((e.symm k : ↥S) : Fin n))
+      case hi =>
+        intro j hj
+        have hjS : j ∈ S := (Finset.mem_filter.mp hj).1
+        have hne : χ j ≠ 0 := (Finset.mem_filter.mp hj).2
+        rw [hχdef] at hne
+        simp only [dif_pos hjS] at hne
+        rw [Finset.mem_filter]
+        refine ⟨Finset.mem_univ _, ?_⟩
+        show x (e ⟨j, hjS⟩) ≠ y (e ⟨j, hjS⟩)
+        intro heq
+        apply hne
+        unfold RSign
+        rw [heq]
+        ring
+      case hj =>
+        intro k hk
+        have hxy : x k ≠ y k := (Finset.mem_filter.mp hk).2
+        rw [Finset.mem_filter]
+        refine ⟨(e.symm k).2, ?_⟩
+        show χ ((e.symm k : ↥S) : Fin n) ≠ 0
+        rw [hχdef]
+        simp only [dif_pos (e.symm k).2]
+        rw [hinv2]
+        intro heq
+        apply hxy
+        rcases hxv : x k <;> rcases hyv : y k <;> simp_all [RSign] <;> norm_num at heq
+      case left_inv =>
+        intro j hj
+        exact hinv1 j (Finset.mem_filter.mp hj).1
+      case right_inv =>
+        intro k _
+        exact hinv2 k
+    rw [hcard]
+    exact hdist
+  · intro i
+    have heq : ∑ j ∈ S, a i j * χ j = ∑ k : Fin S.card, a' i k * ((RSign x k - RSign y k)/2) := by
+      apply Finset.sum_bij' (i := fun j hj => e ⟨j, hj⟩) (j := fun k _ => ((e.symm k : ↥S) : Fin n))
+      case hi => intro j _; exact Finset.mem_univ _
+      case hj => intro k _; exact (e.symm k).2
+      case left_neg => intro j hj; exact hinv1 j hj
+      case right_neg => intro k _; exact hinv2 k
+      case h =>
+        intro j hj
+        rw [ha'def, hχdef]
+        simp only [dif_pos hj]
+        rw [hinv1 j hj]
+    rw [heq]
+    exact hbound i
+
+end
