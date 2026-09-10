@@ -363,4 +363,68 @@ lemma negMulLog_strictMonoOn : StrictMonoOn Real.negMulLog (Set.Icc 0 (Real.exp 
     rwa [Real.log_exp] at this
   linarith
 
+/-- Step 2 of the entropy-sum derivation: the entropy-term contribution of a
+peripheral (`j ≠ 0`) shell is controlled by `λ²(2|j|-1)²` once `λ ≥ 2`, via
+`negMulLog`'s monotonicity on `[0, 1/e]` (the tail bound `q_j` always lands
+there for `λ ≥ 2`, `|j| ≥ 1`). -/
+lemma peripheral_entropyTerm_le (lam : ℝ) (hlam : 2 ≤ lam) {j : ℤ} (hj : j ≠ 0)
+    (p : ℝ) (hp0 : 0 ≤ p)
+    (hple : p ≤ 2 * Real.exp (-(lam^2 * (2*|(j:ℝ)|-1)^2 / 2))) :
+    (if p = 0 then (0:ℝ) else p * Real.logb 2 (1 / p))
+      ≤ (2 * Real.exp (-(lam^2 * (2*|(j:ℝ)|-1)^2 / 2)))
+          * (lam^2 * (2*|(j:ℝ)|-1)^2) / (2 * Real.log 2) := by
+  have hj1 : (1:ℝ) ≤ |(j:ℝ)| := by
+    have h1 : (1:ℤ) ≤ |j| := Int.one_le_abs hj
+    calc (1:ℝ) = ((1:ℤ):ℝ) := by norm_num
+      _ ≤ ((|j| : ℤ) : ℝ) := by exact_mod_cast h1
+      _ = |(j:ℝ)| := by push_cast [Int.cast_abs]; ring
+  set X : ℝ := lam^2 * (2*|(j:ℝ)|-1)^2 / 2 with hXdef
+  set q : ℝ := 2 * Real.exp (-X) with hqdef
+  have hXge : 2 ≤ X := by
+    have h1 : (1:ℝ) ≤ 2*|(j:ℝ)|-1 := by linarith
+    have h2 : (4:ℝ) ≤ lam^2 := by nlinarith [sq_nonneg (lam - 2)]
+    have h3 : (1:ℝ) ≤ (2*|(j:ℝ)|-1)^2 := by nlinarith [sq_nonneg (2*|(j:ℝ)|-1-1)]
+    have hprod : (4:ℝ) * 1 ≤ lam^2 * (2*|(j:ℝ)|-1)^2 :=
+      mul_le_mul h2 h3 (by norm_num) (by positivity)
+    rw [hXdef, le_div_iff₀ (by norm_num : (0:ℝ) < 2)]
+    nlinarith [hprod]
+  have hqpos : 0 < q := by rw [hqdef]; positivity
+  have hlog2pos : 0 < Real.log 2 := Real.log_pos (by norm_num)
+  have hqle : q ≤ Real.exp (-1) := by
+    have hexp2 : (2:ℝ) ≤ Real.exp 1 := by linarith [Real.add_one_le_exp (1:ℝ)]
+    have hmono : Real.exp (-X) ≤ Real.exp (-2) := Real.exp_le_exp.mpr (by linarith)
+    calc q = 2 * Real.exp (-X) := hqdef
+      _ ≤ Real.exp 1 * Real.exp (-2) :=
+          mul_le_mul hexp2 hmono (le_of_lt (Real.exp_pos _)) (le_of_lt (Real.exp_pos _))
+      _ = Real.exp (-1) := by rw [← Real.exp_add]; norm_num
+  have hple' : p ≤ q := hple
+  have hmem_p : p ∈ Set.Icc (0:ℝ) (Real.exp (-1)) := ⟨hp0, hple'.trans hqle⟩
+  have hmem_q : q ∈ Set.Icc (0:ℝ) (Real.exp (-1)) := ⟨hqpos.le, hqle⟩
+  have hmono2 : Real.negMulLog p ≤ Real.negMulLog q :=
+    negMulLog_strictMonoOn.monotoneOn hmem_p hmem_q hple'
+  have hterm_p : (if p = 0 then (0:ℝ) else p * Real.logb 2 (1 / p))
+      = Real.negMulLog p / Real.log 2 := entropyTerm_eq_negMulLog_div p
+  rw [hterm_p]
+  have hlogq : Real.log q = Real.log 2 - X := by
+    rw [hqdef, Real.log_mul (by norm_num) (Real.exp_pos _).ne', Real.log_exp]
+    ring
+  have hstep1 : Real.negMulLog p / Real.log 2 ≤ Real.negMulLog q / Real.log 2 :=
+    div_le_div_of_nonneg_right hmono2 hlog2pos.le
+  have hstep2 : Real.negMulLog q / Real.log 2 = q * (X - Real.log 2) / Real.log 2 := by
+    unfold Real.negMulLog
+    rw [hlogq]; ring
+  have hlog2ne : Real.log 2 ≠ 0 := hlog2pos.ne'
+  have heq2X : q * (2*X) / (2 * Real.log 2) = q * X / Real.log 2 := by
+    field_simp
+  have hstep3 : q * (X - Real.log 2) / Real.log 2 ≤ q * (2*X) / (2 * Real.log 2) := by
+    rw [heq2X]
+    have hqle0 : q * (X - Real.log 2) ≤ q * X := by nlinarith [mul_pos hqpos hlog2pos]
+    exact div_le_div_of_nonneg_right hqle0 hlog2pos.le
+  have hgoaleq : q * (lam^2 * (2*|(j:ℝ)|-1)^2) / (2 * Real.log 2) = q * (2*X) / (2 * Real.log 2) := by
+    rw [hXdef]; ring
+  rw [hgoaleq]
+  calc Real.negMulLog p / Real.log 2 ≤ Real.negMulLog q / Real.log 2 := hstep1
+    _ = q * (X - Real.log 2) / Real.log 2 := hstep2
+    _ ≤ q * (2*X) / (2 * Real.log 2) := hstep3
+
 end
