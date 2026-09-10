@@ -251,4 +251,66 @@ lemma empiricalProb_shellFin (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j =
   push_cast
   ring
 
+/-- If `shellIdx = j`, the row sum is at least `2jΔ`. -/
+lemma shellIdx_ge (a : Fin m → ℝ) {j : ℤ} (ω : Fin m → Bool) (heq : shellIdx Δ a ω = j)
+    (hΔpos : 0 < Δ) : 2 * (j:ℝ) * Δ ≤ rowSumB a ω := by
+  unfold shellIdx at heq
+  have h1 := Int.floor_le (rowSumB a ω / (2*Δ))
+  rw [heq] at h1
+  calc 2 * (j:ℝ) * Δ = (j:ℝ) * (2*Δ) := by ring
+    _ ≤ (rowSumB a ω / (2*Δ)) * (2*Δ) := mul_le_mul_of_nonneg_right h1 (by positivity)
+    _ = rowSumB a ω := by field_simp
+
+/-- If `shellIdx = j`, the row sum is less than `2(j+1)Δ`. -/
+lemma shellIdx_lt (a : Fin m → ℝ) {j : ℤ} (ω : Fin m → Bool) (heq : shellIdx Δ a ω = j)
+    (hΔpos : 0 < Δ) : rowSumB a ω < 2 * ((j:ℝ)+1) * Δ := by
+  unfold shellIdx at heq
+  have h1 := Int.lt_floor_add_one (rowSumB a ω / (2*Δ))
+  rw [heq] at h1
+  calc rowSumB a ω = (rowSumB a ω / (2*Δ)) * (2*Δ) := by field_simp
+    _ < ((j:ℝ)+1) * (2*Δ) := mul_lt_mul_of_pos_right h1 (by positivity)
+    _ = 2 * ((j:ℝ)+1) * Δ := by ring
+
+/-- Tail bound for a positive shell: `Pr[shellIdx = j] ≤ 2·exp(-2j²λ²)` when
+`Δ = λ√m` and `j ≥ 1`. -/
+lemma shellIdx_prob_le_pos (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j = 1)
+    (hΔpos : 0 < Δ) {j : ℤ} (hj : 1 ≤ j) :
+    ((univ.filter (fun ω => shellIdx Δ a ω = j)).card : ℝ) / (2:ℝ)^m
+      ≤ 2 * Real.exp (-(2*(j:ℝ)*Δ)^2 / (2*m)) := by
+  have hjr : (1:ℝ) ≤ (j:ℝ) := by exact_mod_cast hj
+  rw [← uMeasure_real_coe_finset m (univ.filter (fun ω => shellIdx Δ a ω = j))]
+  have hsub : (↑(univ.filter (fun ω => shellIdx Δ a ω = j)) : Set (Fin m → Bool))
+      ⊆ {ω | 2*(j:ℝ)*Δ ≤ |rowSumB a ω|} := by
+    intro ω hω
+    simp only [Finset.coe_filter, Finset.mem_univ, true_and, Set.mem_setOf_eq] at hω ⊢
+    have hge := shellIdx_ge Δ a ω hω hΔpos
+    exact le_trans hge (le_abs_self _)
+  calc (uMeasure m).real (↑(univ.filter (fun ω => shellIdx Δ a ω = j)) : Set (Fin m → Bool))
+      ≤ (uMeasure m).real {ω | 2*(j:ℝ)*Δ ≤ |rowSumB a ω|} := measureReal_mono hsub
+    _ ≤ 2 * Real.exp (-(2*(j:ℝ)*Δ)^2 / (2*m)) :=
+        rowSumB_tail_bound m a h01 (2*(j:ℝ)*Δ) (by nlinarith)
+
+/-- Tail bound for a shell two or more below zero:
+`Pr[shellIdx = j] ≤ 2·exp(-2(j+1)²λ²)` when `Δ = λ√m` and `j ≤ -2`. -/
+lemma shellIdx_prob_le_neg (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j = 1)
+    (hΔpos : 0 < Δ) {j : ℤ} (hj : j ≤ -2) :
+    ((univ.filter (fun ω => shellIdx Δ a ω = j)).card : ℝ) / (2:ℝ)^m
+      ≤ 2 * Real.exp (-(2*((j:ℝ)+1)*Δ)^2 / (2*m)) := by
+  have hjr : (j:ℝ) + 1 ≤ -1 := by
+    have : (j:ℝ) ≤ -2 := by exact_mod_cast hj
+    linarith
+  rw [← uMeasure_real_coe_finset m (univ.filter (fun ω => shellIdx Δ a ω = j))]
+  have hsub : (↑(univ.filter (fun ω => shellIdx Δ a ω = j)) : Set (Fin m → Bool))
+      ⊆ {ω | -(2*((j:ℝ)+1)*Δ) ≤ |rowSumB a ω|} := by
+    intro ω hω
+    simp only [Finset.coe_filter, Finset.mem_univ, true_and, Set.mem_setOf_eq] at hω ⊢
+    have hlt := shellIdx_lt Δ a ω hω hΔpos
+    have h2 : -(rowSumB a ω) ≤ |rowSumB a ω| := neg_le_abs _
+    linarith
+  calc (uMeasure m).real (↑(univ.filter (fun ω => shellIdx Δ a ω = j)) : Set (Fin m → Bool))
+      ≤ (uMeasure m).real {ω | -(2*((j:ℝ)+1)*Δ) ≤ |rowSumB a ω|} := measureReal_mono hsub
+    _ ≤ 2 * Real.exp (-(2*((j:ℝ)+1)*Δ)^2 / (2*m)) := by
+        have := rowSumB_tail_bound m a h01 (-(2*((j:ℝ)+1)*Δ)) (by nlinarith)
+        rwa [neg_sq] at this
+
 end
