@@ -9,21 +9,21 @@ theorem binEntropy_le_log_two_sub_sq (p : ℝ) (hp0 : 0 ≤ p) (hp1 : p ≤ 1) :
   set g : ℝ → ℝ := fun p => Real.binEntropy p + 2 * (p - 1/2)^2 with hg_def
   have hgcont : ContinuousOn g (Icc 0 1) := by
     apply Continuous.continuousOn
-    unfold_let g
+    simp only [hg_def]
     fun_prop
   have hgdiff : DifferentiableOn ℝ g (interior (Icc (0:ℝ) 1)) := by
     rw [interior_Icc]
     intro p hp
     rw [mem_Ioo] at hp
     apply DifferentiableAt.differentiableWithinAt
-    unfold_let g
+    simp only [hg_def]
     apply DifferentiableAt.add
     · exact Real.differentiableAt_binEntropy hp.1.ne' hp.2.ne
     · fun_prop
   have hderiv_eq : ∀ p ∈ Ioo (0:ℝ) 1, deriv g p = Real.log (1-p) - Real.log p + 4*(p - 1/2) := by
     intro p hp
     rw [mem_Ioo] at hp
-    unfold_let g
+    simp only [hg_def]
     rw [deriv_add (Real.differentiableAt_binEntropy hp.1.ne' hp.2.ne) (by fun_prop),
       Real.deriv_binEntropy]
     congr 1
@@ -77,11 +77,11 @@ theorem binEntropy_le_log_two_sub_sq (p : ℝ) (hp0 : 0 ≤ p) (hp1 : p ≤ 1) :
     concaveOn_of_deriv2_nonpos (convex_Icc 0 1) hgcont hgdiff hgdiff' hderiv2_nonpos
   have hsymm : ∀ q ∈ Icc (0:ℝ) 1, g (1 - q) = g q := by
     intro q _
-    unfold_let g
+    simp only [hg_def]
     rw [Real.binEntropy_one_sub]
     ring_nf
   have hg_half : g (1/2) = Real.log 2 := by
-    unfold_let g
+    simp only [hg_def]
     rw [show (1:ℝ)/2 - 1/2 = 0 by ring]
     simp [Real.binEntropy_two_inv]
   have key : g p ≤ Real.log 2 := by
@@ -105,5 +105,5 @@ theorem binEntropy_le_log_two_sub_sq (p : ℝ) (hp0 : 0 ≤ p) (hp1 : p ≤ 1) :
       rw [div_le_div_iff_right hpos] at hslope
       rw [hg_half] at hslope ⊢
       linarith
-  unfold_let g at key
+  simp only [hg_def] at key
   linarith [key]
