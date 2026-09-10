@@ -1,6 +1,108 @@
 # Plan: proving Komlos.spencer_six_deviations (the 6√n bound)
 
-## STATUS: Lemma 9 AND Lemma 8 are DONE.
+## STATUS: Lemma 9, Lemma 8, AND the telescoping-sum bound are DONE.
+
+The numerical core of the outer iteration is now fully formalized:
+`iterLam`, `iterX`, `iterLam_budget_eq`, `iterX_sum_le` (commit `835fefa`).
+**Read this section before touching the outer iteration — it records a
+real mathematical trap that was found and fixed this session, and the
+fix shapes the whole remaining construction.**
+
+**The trap**: the obvious way to run the iteration is to precompute a
+schedule `λ_k` indexed by round number `k` (e.g. sized for an assumed
+active size `n·0.9^k`), then just apply `lemma8_partial_coloring_round`
+with that `λ_k` at round `k`. This is UNSOUND: `lemma8_partial_coloring_round`
+only gives a LOWER bound on how much gets colored each round (via
+`kleitman_diameter`'s one-sided distance guarantee) — there's no upper
+bound, so the ACTUAL active size after round `k` could undershoot the
+assumed `n·0.9^k` arbitrarily. Since the required `λ` for the entropy
+budget is a DEcreasing function of the active size (smaller active set
+⟹ needs LARGER λ), a `λ_k` sized for the assumed (larger) active size
+can be too small for the true (smaller) one, silently invalidating
+Lemma 8's hypothesis.
+
+**The fix**: never precompute `λ` from a round index. Compute it FRESH
+from whatever the actual current active size `m` is, via `iterLam n m`
+(`iterLam_budget_eq` proves this exactly saturates the budget, so it's
+always sufficient for the true current `m`, whatever that is). The
+`n·0.9^k` schedule is used ONLY afterward, as a pure bookkeeping device
+to bound the TOTAL: since `actual_m_k ≤ n·0.9^k` always holds (a
+one-directional inequality that IS robust to rounds over-performing —
+provable by simple induction from Lemma 8's guarantee alone), and
+`iterX(n, ·) := iterLam(n, ·)·√·` is monotone increasing on `(0, n]`
+(checked: `m·ln(C/m)` for `C := 120n/log2 ≈ 173n` is increasing whenever
+`m < C/e`, true throughout since `n ≪ 173n/e`), the ACTUAL per-round
+contribution `iterX(n, actual_m_k) ≤ iterX(n, n·0.9^k)` termwise. So the
+real (variable-length, run-dependent) sum is bounded by the sum of the
+IDEALIZED round-indexed sequence, for ANY number of terms — which is
+exactly what `iterX_sum_le` bounds by an explicit, n-independent
+multiple of `√n` (via comparison to a convergent arithmetic-geometric
+series `Σ(k+1)rᵏ`, since `√(9/10)ᵏ` decays faster than `iterLam`'s
+`√log` term grows). This decomposition means the inductive construction
+below needs NO closed-form recursive invariant (an earlier attempt at
+one — guessing `MB(m) := 2√m·√(log(C/m)+E)` and verifying a one-step
+self-referential inequality — provably FAILS for large `log(C/m)`,
+since the two sides grow at different asymptotic rates; the sum-based
+argument above is the correct fix and is now fully formalized).
+
+## What's left: the inductive construction
+
+**Goal**: by strong induction on the (real, local) active size `m`,
+prove: "∃ a coloring `ε : Fin m → Bool` of an `m`-column active set (rows
+indexed by the FIXED, ORIGINAL `n`) and `∃ K : ℕ`, such that every row's
+partial sum is `≤ Σ_{k ∈ range K} iterX n (m·(9/10)^k) + Base(n)`" where
+`Base(n)` is a fixed threshold-independent bound from
+`Komlos.spencer_random_finish` (or similar) covering whatever's left once
+`m` drops below a fixed threshold (e.g. `20`, needed so
+`2*⌊m/10⌋ ≥ 0.1m`, i.e. so each round provably shrinks `m` by a genuine
+constant fraction — see the `hsm`/`h2sm` arithmetic in
+`lemma8_partial_coloring_round`'s proof for the exact threshold algebra).
+
+Recursive step (m ≥ threshold): apply `lemma8_partial_coloring_round`
+(with `iterLam n m`, verified sufficient via `iterLam_budget_eq` and
+`hlam : 2 ≤ iterLam n m` — check this holds; `iterLam` was checked by
+hand to be comfortably `≥ 4.5` throughout `m ≤ n`, see the old
+hand-derivation notes below, but this needs its own small formal lemma)
+to peel off `≥ 2⌊m/10⌋` newly-colored columns, leaving `m' ≤ 0.9m`
+uncolored. Apply the induction hypothesis to `m'` (`m' < m`, well-founded)
+to get `ε', K'`. Combine: `K := K'+1`, and the SUM comparison needed is
+`iterX(n,m) + Σ_{k<K'} iterX(n,m'·(9/10)^k) ≤ Σ_{k<K'+1} iterX(n,m·(9/10)^k)`
+— true termwise since `m'·(9/10)^k ≤ 0.9m·(9/10)^k = m·(9/10)^{k+1}` and
+`iterX` is monotone (see `Finset.sum_le_sum` + reindex `k ↦ k+1`, similar
+in spirit to the `Finset.sum_nbij'` reindexing patterns used earlier in
+this file). This is the "termwise, no closed form needed" argument from
+the STATUS section above, now spelled out per-step.
+
+**The remaining hard technical piece — Fin/Finset merging**: combining
+`ε` (colors the differing positions between Lemma 8's `x,y : Fin m →
+Bool`) and `ε'` (colors the REMAINING `m'`-sized subset, indexed by
+`Fin m'`, not `Fin m`) into a single `Fin m → Bool` coloring requires a
+bijection between `Fin m'` and the actual remaining `Finset (Fin m)` (the
+non-differing positions between `x,y`, cardinality `m - distance = m'`
+approx — careful, `lemma8_partial_coloring_round`'s `y` restricted to
+that Finset is the natural "base" to extend). Likely needs
+`Finset.orderIsoOfFin` (canonical order-iso between `Fin s.card` and a
+Finset `s`) or an explicit `Finset.equivFin`-style construction, transporting
+`a' : Fin n → Fin m' → ℝ` (the restricted row matrix) through this
+bijection to feed the induction hypothesis, then transporting `ε'` back.
+This is the kind of Fin/Finset coercion work that was the single
+hardest mechanical obstacle in Lemma 9's `shellFin_sum_eq_int_sum` (see
+that section's notes on the `guard_target = True` diagnostic trick if
+`omega`/`rw` mismatches recur here) — budget real time for it.
+
+**After the induction closes** (giving a full `Fin n → Bool` coloring —
+apply the induction at `m = n` — with total bound
+`≤ Σ_{k<K} iterX(n, n·(9/10)^k) + Base(n) ≤ C√n + Base(n)` via
+`iterX_sum_le`): connect `Base(n)` (from `spencer_random_finish`, itself
+presumably `O(√(threshold·log n))`, negligible/dominated since threshold
+is a FIXED constant) to get a final bound `≤ C'·√n` for an explicit
+(surely `≫ 6`, per the plan's standing acknowledgment) constant `C'`.
+Match this against `Komlos.spencer_six_deviations`'s exact statement
+shape (check the RSign/coloring conventions line up — the theorem wants
+a sign vector `ε ∈ {±1}ⁿ` with `|Σ A_ij ε_j| ≤ 6√n`; our `RSign` already
+matches this convention from earlier Lemma 8/9 work).
+
+## STATUS (older): Lemma 9 AND Lemma 8 are DONE.
 
 `lemma8_partial_coloring_round` in `scratch/SpencerEntropyLemma.lean`
 (commit `ed9d7f8`) assembles the n-rows/pigeonhole/Kleitman round: given
