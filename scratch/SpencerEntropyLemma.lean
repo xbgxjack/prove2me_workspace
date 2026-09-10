@@ -1576,4 +1576,96 @@ lemma iterLam_budget_eq (n m : ℝ) (hn : 0 < n) (hm : 0 < m) (hmn : m ≤ n) :
   field_simp
   ring
 
+/-- `Real.sqrt` commutes with natural powers, for a nonneg base. -/
+lemma real_sqrt_pow (x : ℝ) (hx : 0 ≤ x) (k : ℕ) : Real.sqrt (x^k) = (Real.sqrt x)^k := by
+  induction k with
+  | zero => simp
+  | succ j ih => rw [pow_succ, pow_succ, Real.sqrt_mul (pow_nonneg hx j), ih]
+
+/-- Closed form for `Σ_{k=0}^{N-1} (k+1)·r^k`, needed to bound the
+polynomial-times-geometric series arising from `λ`'s slow logarithmic
+growth against the geometric shrinkage of the active set. -/
+lemma arith_geom_partial_sum_eq (r : ℝ) (hr1 : r ≠ 1) (N : ℕ) :
+    ∑ k ∈ Finset.range N, ((k:ℝ)+1) * r^k
+      = (1 - r^N)/(1-r)^2 - (N:ℝ)*r^N/(1-r) := by
+  induction N with
+  | zero => simp
+  | succ n ih =>
+    rw [Finset.sum_range_succ, ih]
+    have h1mr : (1:ℝ) - r ≠ 0 := sub_ne_zero.mpr (Ne.symm hr1)
+    push_cast
+    field_simp
+    ring
+
+lemma arith_geom_partial_sum_le (r : ℝ) (hr0 : 0 ≤ r) (hr1 : r < 1) (N : ℕ) :
+    ∑ k ∈ Finset.range N, ((k:ℝ)+1) * r^k ≤ 1/(1-r)^2 := by
+  rw [arith_geom_partial_sum_eq r (ne_of_lt hr1) N]
+  have h1mr : 0 < 1 - r := by linarith
+  have h1 : (1-r^N)/(1-r)^2 ≤ 1/(1-r)^2 :=
+    div_le_div_of_nonneg_right (by linarith [pow_nonneg hr0 N]) (by positivity)
+  have h2 : 0 ≤ (N:ℝ)*r^N/(1-r) := by positivity
+  linarith [h1, h2]
+
+/-- The idealized (round-indexed) telescoping-sum bound: no matter how
+many rounds `N` are used, `Σ_{k<N} iterX n (n·(9/10)^k) ≤ [explicit
+constant]·√n`. The geometric decay `(√(9/10))^k` beats the logarithmic
+growth of `iterLam`, so the series converges to an absolute
+(n-independent) multiple of `√n`. -/
+lemma iterX_sum_le (n : ℝ) (hn : 0 < n) (N : ℕ) :
+    ∑ k ∈ Finset.range N, iterX n (n * (9/10)^k)
+      ≤ 2 * Real.sqrt (Real.log (120/Real.log 2) + Real.log (10/9))
+          * (1 / (1 - Real.sqrt (9/10)))^2 * Real.sqrt n := by
+  set A : ℝ := Real.log (120/Real.log 2) with hAdef
+  set B : ℝ := Real.log (10/9) with hBdef
+  set ρ : ℝ := Real.sqrt (9/10) with hρdef
+  have hlog2pos : 0 < Real.log 2 := Real.log_pos (by norm_num)
+  have hne_log2 : Real.log 2 ≠ 0 := hlog2pos.ne'
+  have hne_n : (n:ℝ) ≠ 0 := ne_of_gt hn
+  have hρ0 : 0 ≤ ρ := Real.sqrt_nonneg _
+  have hρ1 : ρ < 1 := by
+    rw [hρdef, show (1:ℝ) = Real.sqrt 1 by simp]
+    exact Real.sqrt_lt_sqrt (by norm_num) (by norm_num)
+  have hApos : 0 < A := by
+    rw [hAdef]; apply Real.log_pos; rw [lt_div_iff₀ hlog2pos]; nlinarith [Real.log_two_lt_d9]
+  have hBpos : 0 < B := Real.log_pos (by norm_num)
+  have hterm : ∀ k ∈ Finset.range N,
+      iterX n (n * (9/10)^k) ≤ 2*Real.sqrt (A+B) * ((k:ℝ)+1) * ρ^k * Real.sqrt n := by
+    intro k _
+    have hne_p : ((9:ℝ)/10)^k ≠ 0 := by positivity
+    have heq1 : iterLam n (n * (9/10)^k) = 2 * Real.sqrt (A + (k:ℝ)*B) := by
+      unfold iterLam
+      congr 2
+      have hkey : (120:ℝ)*n/(n*(9/10)^k*Real.log 2) = (120/Real.log 2) * (10/9)^k := by
+        rw [show (10:ℝ)/9 = ((9:ℝ)/10)⁻¹ by norm_num, inv_pow]
+        field_simp
+      rw [hkey, Real.log_mul (by positivity) (by positivity), Real.log_pow, hAdef, hBdef]
+    have heq2 : Real.sqrt (n * (9/10)^k) = Real.sqrt n * ρ^k := by
+      rw [Real.sqrt_mul hn.le, hρdef, real_sqrt_pow (9/10) (by norm_num) k]
+    have hle : Real.sqrt (A + (k:ℝ)*B) ≤ Real.sqrt (A+B) * ((k:ℝ)+1) := by
+      have hsq : (A + (k:ℝ)*B) ≤ (A+B)*((k:ℝ)+1)^2 := by
+        nlinarith [sq_nonneg ((k:ℝ)), hApos.le, hBpos.le, (Nat.cast_nonneg k : (0:ℝ) ≤ (k:ℝ))]
+      calc Real.sqrt (A + (k:ℝ)*B) ≤ Real.sqrt ((A+B)*((k:ℝ)+1)^2) := Real.sqrt_le_sqrt hsq
+        _ = Real.sqrt (A+B) * ((k:ℝ)+1) := by
+            rw [Real.sqrt_mul (by positivity), Real.sqrt_sq (by positivity)]
+    unfold iterX
+    rw [heq1, heq2]
+    calc 2 * Real.sqrt (A + (k:ℝ)*B) * (Real.sqrt n * ρ^k)
+        ≤ 2 * (Real.sqrt (A+B) * ((k:ℝ)+1)) * (Real.sqrt n * ρ^k) := by
+          apply mul_le_mul_of_nonneg_right _ (by positivity)
+          apply mul_le_mul_of_nonneg_left hle (by norm_num)
+      _ = 2*Real.sqrt (A+B) * ((k:ℝ)+1) * ρ^k * Real.sqrt n := by ring
+  calc ∑ k ∈ Finset.range N, iterX n (n * (9/10)^k)
+      ≤ ∑ k ∈ Finset.range N, 2*Real.sqrt (A+B) * ((k:ℝ)+1) * ρ^k * Real.sqrt n :=
+        Finset.sum_le_sum hterm
+    _ = 2*Real.sqrt (A+B) * Real.sqrt n * ∑ k ∈ Finset.range N, ((k:ℝ)+1)*ρ^k := by
+        rw [Finset.mul_sum]
+        apply Finset.sum_congr rfl
+        intro k _
+        ring
+    _ ≤ 2*Real.sqrt (A+B) * Real.sqrt n * (1/(1-ρ)^2) := by
+        apply mul_le_mul_of_nonneg_left (arith_geom_partial_sum_le ρ hρ0 hρ1 N)
+        positivity
+    _ = 2*Real.sqrt (A+B) * (1/(1-ρ))^2 * Real.sqrt n := by
+        rw [div_pow, one_pow]; ring
+
 end
