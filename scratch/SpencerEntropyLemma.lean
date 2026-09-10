@@ -30,7 +30,7 @@ lemma abs_rowSumB_le (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j = 1) (χ 
         exact ha
     _ = m := by simp
 
-/-- The quantization threshold width. -/
+-- The quantization threshold width.
 variable (Δ : ℝ)
 
 /-- The quantized (shell-index) row sum: which width-`2Δ` interval `rowSumB a χ`
