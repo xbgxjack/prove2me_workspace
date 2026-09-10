@@ -436,4 +436,78 @@ lemma central_entropyTerm_le (p0 : ℝ) (hp0 : 0 ≤ p0) :
   have hlog2pos : 0 < Real.log 2 := Real.log_pos (by norm_num)
   exact div_le_div_of_nonneg_right (Real.negMulLog_le_one_sub_self hp0) hlog2pos.le
 
+/-- A finite geometric partial sum, in closed form. -/
+lemma geom_partial_sum_eq (r : ℝ) (hr1 : r ≠ 1) (N : ℕ) :
+    ∑ k ∈ Finset.Icc 1 N, r ^ k = r * (1 - r ^ N) / (1 - r) := by
+  induction N with
+  | zero => simp
+  | succ n ih =>
+    rw [Finset.sum_Icc_succ_top (Nat.le_add_left 1 n), ih]
+    have h1mr : (1:ℝ) - r ≠ 0 := sub_ne_zero.mpr (Ne.symm hr1)
+    field_simp
+    ring
+
+/-- Step 6b of the entropy-sum derivation: for `0 ≤ r < 1`, a finite geometric
+partial sum `Σ_{k=1}^N r^k` is bounded by the full series value `r/(1-r)`. -/
+lemma geom_partial_sum_le (r : ℝ) (hr0 : 0 ≤ r) (hr1 : r < 1) (N : ℕ) :
+    ∑ k ∈ Finset.Icc 1 N, r ^ k ≤ r / (1 - r) := by
+  rw [geom_partial_sum_eq r (ne_of_lt hr1) N]
+  have h1mr : 0 < 1 - r := by linarith
+  apply div_le_div_of_nonneg_right _ h1mr.le
+  nlinarith [mul_nonneg hr0 (pow_nonneg hr0 N)]
+
+/-- Step 6b, assembled: for `λ ≥ 2`, the finite sum `Σ_{k=1}^N exp(-λ²(2k-1)²/4)`
+is bounded by `(16/15)·exp(-λ²/4)`, via step 6a's `(2k-1)² ≥ 4k-3` comparison
+to a geometric series with ratio `exp(-λ²) ≤ 1/16`. -/
+lemma peripheral_geom_sum_le (lam : ℝ) (hlam : 2 ≤ lam) (N : ℕ) :
+    ∑ k ∈ Finset.Icc 1 N, Real.exp (-(lam^2 * (2*(k:ℝ)-1)^2) / 4)
+      ≤ (16/15 : ℝ) * Real.exp (-lam^2/4) := by
+  set r : ℝ := Real.exp (-(lam^2)) with hrdef
+  have hr0 : 0 ≤ r := (Real.exp_pos _).le
+  have hr1 : r < 1 := by
+    rw [hrdef]
+    calc Real.exp (-(lam^2)) < Real.exp 0 := Real.exp_lt_exp.mpr (by nlinarith)
+      _ = 1 := Real.exp_zero
+  have hexp1_ge2 : (2:ℝ) ≤ Real.exp 1 := by linarith [Real.add_one_le_exp (1:ℝ)]
+  have hexp4_eq : Real.exp (4:ℝ) = Real.exp 1 ^ 4 := by
+    rw [show (4:ℝ) = ((4:ℕ):ℝ) * 1 by norm_num, Real.exp_nat_mul]
+  have hexp4_ge16 : (16:ℝ) ≤ Real.exp 4 := by
+    rw [hexp4_eq]
+    calc (16:ℝ) = 2^4 := by norm_num
+      _ ≤ Real.exp 1 ^ 4 := by gcongr
+  have hexplam2_ge16 : (16:ℝ) ≤ Real.exp (lam^2) := by
+    calc (16:ℝ) ≤ Real.exp 4 := hexp4_ge16
+      _ ≤ Real.exp (lam^2) := Real.exp_le_exp.mpr (by nlinarith)
+  have hr_le : r ≤ 1/16 := by
+    rw [hrdef, Real.exp_neg, ← one_div]
+    exact one_div_le_one_div_of_le (by norm_num) hexplam2_ge16
+  have hinv_le : (1:ℝ) / (1 - r) ≤ 16/15 := by
+    have h1mr : (0:ℝ) < 1 - r := by linarith
+    rw [div_le_iff₀ h1mr]
+    nlinarith [hr_le]
+  have hterm : ∀ k ∈ Finset.Icc 1 N,
+      Real.exp (-(lam^2 * (2*(k:ℝ)-1)^2) / 4) ≤ Real.exp (3*lam^2/4) * r^k := by
+    intro k _
+    rw [hrdef, ← Real.exp_nat_mul, ← Real.exp_add]
+    apply Real.exp_le_exp.mpr
+    have h6a := sq_two_mul_sub_one_ge (k:ℝ)
+    have hprod : lam^2/4 * (4*(k:ℝ) - 3) ≤ lam^2/4 * (2*(k:ℝ)-1)^2 :=
+      mul_le_mul_of_nonneg_left h6a (by positivity)
+    nlinarith [hprod]
+  calc ∑ k ∈ Finset.Icc 1 N, Real.exp (-(lam^2 * (2*(k:ℝ)-1)^2) / 4)
+      ≤ ∑ k ∈ Finset.Icc 1 N, Real.exp (3*lam^2/4) * r^k := Finset.sum_le_sum hterm
+    _ = Real.exp (3*lam^2/4) * ∑ k ∈ Finset.Icc 1 N, r^k := by rw [Finset.mul_sum]
+    _ ≤ Real.exp (3*lam^2/4) * (r / (1 - r)) := by
+        apply mul_le_mul_of_nonneg_left (geom_partial_sum_le r hr0 hr1 N) (Real.exp_pos _).le
+    _ = Real.exp (3*lam^2/4) * r * (1/(1-r)) := by ring
+    _ ≤ Real.exp (3*lam^2/4) * r * (16/15) := by
+        apply mul_le_mul_of_nonneg_left hinv_le
+        exact mul_nonneg (Real.exp_pos _).le hr0
+    _ = (16/15) * (Real.exp (3*lam^2/4) * r) := by ring
+    _ = (16/15) * Real.exp (-lam^2/4) := by
+        congr 1
+        rw [hrdef, ← Real.exp_add]
+        congr 1
+        ring
+
 end
