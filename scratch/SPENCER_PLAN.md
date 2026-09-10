@@ -102,54 +102,111 @@ reason no log(n) tax is paid:
   template for Lemma 9's Chernoff step, bridging MeasureTheory.Measure and the
   counting-based `empiricalProb`/`shannonEntropy` framework.
 
-## Progress so far (scratch/SpencerEntropyLemma.lean, compiles clean, no sorries — updated)
+## IMPORTANT CORRECTION (found and fixed this session)
 
-Additional pieces since the first checkpoint:
-- `shellFin`, `shellIdx_shift_range`, `shellFin_eq_toNat`, `shellFin_eq_iff`,
-  `shellFin_injOn`, `empiricalProb_shellFin`: the Fintype-codomain (`Fin (2m+3)`)
-  version of `shellIdx` via a shift, with a clean membership criterion, and the
-  bridge from `empiricalProb (shellFin Δ a) k` to a plain Finset-counting
-  statement about the underlying `shellIdx`.
-- `shellIdx_ge`, `shellIdx_lt`: the exact interval `[2jΔ, 2(j+1)Δ)` implied by
-  `shellIdx = j` (from the floor definition).
-- `shellIdx_prob_le_pos` (j≥1), `shellIdx_prob_le_neg` (j≤-2): the per-shell
-  Chernoff tail bounds via `rowSumB_tail_bound`.
-- **Important wrinkle discovered**: because `shellIdx` uses `⌊·⌋` (not a centered
-  rounding), the two shells `j=0` and `j=-1` are BOTH "central" (no useful lower
-  bound on `|rowSumB|` from either), while `j≥1` and `j≤-2` are the two decaying
-  tails. The final entropy sum needs to treat `{-1,0}` as a special pair (bounded
-  trivially, e.g. by `2·log2` since there are only 2 such terms each ≤ log2) and
-  sum the tail bound over `j≥1` and `j≤-2` separately.
+The original `shellIdx := ⌊rowSumB/(2Δ)⌋` (floor) convention was WRONG: it makes
+shells `{-1,0}` both "central" (straddling 0, neither has a useful tail bound).
+By the symmetry `χ ↦ ¬χ` (flip all signs), which sends `shellIdx j ↦ -j-1`
+combinatorially, this forces `p_{-1} = p_0` exactly, and together they'd
+contribute close to 1 bit of entropy REGARDLESS of λ (does not shrink as λ
+grows). Since this cost is paid by EVERY one of the n rows, summing it via
+`shannonEntropy_pi_le` would need a budget of ~n bits just for this — but the
+budget is `m_k/10`, which for `m_k ≪ n` (later iteration rounds) would be
+violated. This would have silently sunk the whole approach if not caught.
 
-## Remaining work on Lemma 9 itself (not yet started)
+**Fix**: switched `shellIdx` to `round(rowSumB/(2Δ))` (nearest integer, via
+Mathlib's `round`/`abs_sub_round`), giving a SINGLE symmetric central bucket
+(`shellIdx=0 ↔ |rowSumB|≤Δ`) whose probability `p_0 → 1` as λ grows, so its
+entropy contribution `(1-p_0)/log2 → 0` as required. Already reflected in
+`scratch/SpencerEntropyLemma.lean` (shellIdx_dist, shellIdx_bound,
+shellIdx_prob_le — the floor-era shellIdx_ge/lt and the pos/neg split are gone,
+replaced by one unified lemma using `|j|`).
 
-1. Unfold `shannonEntropy (shellFin Δ a) = Σ_{k : Fin(2m+3)} f(empiricalProb k)`
-   where `f p := if p=0 then 0 else p·logb 2 (1/p)`.
-2. Split the sum: central `{-1,0}` (2 terms, each trivially ≤ log2) vs peripheral
-   (reindex via `shellFin_eq_iff` back to `j : ℤ`, `j≥1` or `j≤-2`).
-3. For the peripheral sum: use `x·log(1/x)` increasing on `(0,1/e)` (true since
-   our tail-bound values are tiny once `λ≥2`) plus the exponential tail bounds
-   already proven, to get each term `≤ C·j²·λ²·exp(-2j²λ²)`-shaped, then sum via
-   comparison to a geometric series (dominated by `j=1` resp. `j=-2`).
-4. Package as: `shannonEntropy (shellFin Δ a) ≤ 2·Real.logb 2 2 + C·λ²·exp(-2λ²)`
-   for an absolute constant `C`, valid whenever `Δ=λ√m`, `λ≥2`.
+## The full entropy-sum derivation (worked by hand, ready to formalize)
 
-This is the hardest remaining piece — genuinely comparable to the hardest single
-lemmas from the Katona/Kleitman project. Everything built so far (the measure
-bridge, the Chernoff chain, the shell-index bookkeeping) is exactly the
-infrastructure this needs; no more new "supporting" lemmas should be needed
-before tackling the sum itself directly.
+Target: `shannonEntropy (shellFin Δ a) ≤ (12/log 2)·exp(-λ²/4)` for `Δ=λ√m`, `λ≥2`
+(a clean, self-derived bound — constants are NOT tight, just correct and simple).
 
-## Progress so far (original checkpoint, still accurate for the base machinery)
+Write `p_j := Pr[shellIdx = j]` (`= empiricalProb` after the `shellFin` reindex),
+`f(p) := if p=0 then 0 else p·logb 2 (1/p)`, so `H(Z) = Σ_j f(p_j)` (sum over the
+bounded integer range from `shellIdx_bound`).
+
+1. **Central term** (`j=0`): `f(p_0) = negMulLog(p_0)/log 2 ≤ (1-p_0)/log 2` via
+   the EXISTING Mathlib lemma `Real.negMulLog_le_one_sub_self` (already found
+   and used conceptually for `partial_coloring_via_kleitman`'s cousin bounds).
+   And `1-p_0 = Σ_{j≠0} p_j` (probabilities sum to 1).
+2. **Peripheral terms** (`j≠0`): via `shellIdx_prob_le`, `p_j ≤ q_j :=
+   2·exp(-λ²(2|j|-1)²/2)`. Since `q_j ≤ 1/e` even at the worst case `λ=2,|j|=1`
+   (`2e^{-2} ≈ 0.271 < 1/e ≈ 0.368` — CHECK THIS ARITHMETIC CAREFULLY when
+   formalizing, it's a real numeric inequality, not just "obviously small"),
+   `x·logb2(1/x)` is increasing on `(0,1/e)`, so `f(p_j) ≤ f(q_j)`. Direct
+   computation: `f(q_j) = q_j·(-1 + λ²(2|j|-1)²/(2·log 2)) ≤ q_j·λ²(2|j|-1)²/(2 log 2)`
+   (drop the `-q_j` term, valid since `q_j>0`).
+3. Combine: `H(Z) ≤ Σ_{j≠0} p_j/log2 + Σ_{j≠0} f(p_j) ≤ Σ_{j≠0} q_j/log2 · (1 + λ²(2|j|-1)²/2)`
+   roughly — fold into `H(Z) ≤ (2/log2)·Σ_{j≠0} q_j·(1+λ²(2|j|-1)²)` (absorbing
+   constants generously; redo the exact bookkeeping when formalizing rather than
+   trusting this paraphrase literally).
+4. Reindex `Σ_{j≠0} = 2·Σ_{k=1}^{m+1}` (j and -j give the same `|j|=k`, using the
+   SAME symmetry fact noted above — this time as a genuine finite-sum reindexing
+   via `Finset.sum_nbij'` or similar, not just a probability identity).
+5. Bound `(1+λ²r_k)·e^{-λ²r_k/2} ≤ 2·e^{-λ²r_k/4}` where `r_k:=(2k-1)²`, via the
+   UNIVERSAL fact `(1+X)e^{-X/4} ≤ 2` for all `X≥0` (max at `X=3`, value
+   `4e^{-3/4}≈1.89<2` — an elementary one-variable calculus fact; in Lean, easiest
+   via `Real.add_one_le_exp` applied cleverly, OR by bounding `(1+X) ≤ exp(X/4)·2`
+   directly using `Real.add_one_le_exp (X/4) : 1+X/4 ≤ exp(X/4)`, so
+   `(1+X) ≤ 1 + 4·(X/4) ≤ 4·(1+X/4) ≤ 4·exp(X/4)` when `X/4≥... ` — REDERIVE
+   CAREFULLY when formalizing; the max-at-X=3 approach needs calculus machinery
+   (`IsLocalMax`/derivative) unless a cruder elementary bound suffices instead,
+   e.g. splitting into `X≤3` (where `1+X≤4` trivially, so `(1+X)e^{-X/4}≤4`) and
+   `X>3` (where a direct exponential comparison closes it) — a case-split avoiding
+   calculus may be more Lean-friendly than the true optimum-point argument).
+6. `(2k-1)² ≥ 4k-3` for all `k≥1` (equality at `k=1`; elementary: `(2k-1)²-(4k-3)
+   = 4(k-1)² ≥ 0`), so `Σ_{k≥1} e^{-λ²r_k/4} ≤ e^{3λ²/4}·Σ_{k≥1}e^{-λ²k} =
+   e^{3λ²/4}·e^{-λ²}/(1-e^{-λ²})` (finite geometric series, `Finset.geom_sum_eq`
+   or a direct comparison bound suffices since we only need an upper bound, not
+   exact value). For `λ≥2`: `e^{3λ²/4}e^{-λ²}=e^{-λ²/4}` and
+   `1/(1-e^{-λ²})≤1/(1-e^{-4})≤1.02`.
+7. Assemble: `Σ_{k≥1}(1+λ²r_k)e^{-λ²r_k/2} ≤ 2·1.02·e^{-λ²/4} ≤ 3e^{-λ²/4}`, giving
+   the final `H(Z) ≤ (2/log2)·2·3·e^{-λ²/4} = (12/log2)e^{-λ²/4}`.
+
+**Formalization order suggestion**: prove step 5's elementary bound first (fully
+self-contained, no other dependencies), then step 6's geometric-series bound
+(also self-contained), then assemble the per-shell bound from `shellIdx_prob_le`
+(step 2, needs the `x logb2(1/x)` monotonicity fact — check Mathlib for
+`Real.negMulLog` monotonicity on an interval, or derive via `strictMonoOn` from
+its derivative, similar to how `strictConcave_binEntropy` was derived), then do
+the finite-sum reindexing (step 4, `Finset.sum_nbij'`, same pattern used
+repeatedly in the Katona/Kleitman work), then combine everything (steps 1,3,7).
+
+## Current state of scratch/SpencerEntropyLemma.lean (compiles clean, no sorries)
 
 - `RSign`, `rowSumB`: the ±1 coloring and 0/1-weighted row sum on `Fin m → Bool`.
-- `shellIdx`, `shellIdx_bound`: the quantized `⌊rowSumB/(2Δ)⌋` and its boundedness.
 - `uMeasure`, `uMeasure_real_coe_finset`: uniform measure on `Fin m → Bool` bridged
-  to plain Finset-counting (`(uMeasure m).real S = S.card / 2^m`) — this is the
-  bridge between the counting-based `shannonEntropy`/`empiricalProb` framework and
-  the measure-theoretic `HasSubgaussianMGF` framework.
+  to plain Finset-counting (`(uMeasure m).real S = S.card / 2^m`) — the bridge
+  between the counting-based `shannonEntropy`/`empiricalProb` framework and the
+  measure-theoretic `HasSubgaussianMGF` framework.
 - `rowSumB_subgaussian`, `rowSumB_tail_bound`: the full Chernoff chain, giving
   `(uMeasure m).real {ω | t ≤ |rowSumB a ω|} ≤ 2·exp(-t²/(2m))`.
+- `shellIdx := round(rowSumB/(2Δ))`, `shellIdx_dist`, `shellIdx_bound`: the
+  CORRECTED (round-based, single-central-bucket) quantization — see the
+  correction section above.
+- `shellFin`, `shellIdx_shift_range`, `shellFin_eq_toNat`, `shellFin_eq_iff`,
+  `empiricalProb_shellFin`: the Fintype-codomain (`Fin (2m+3)`) version via a
+  shift, with the bridge from `empiricalProb (shellFin Δ a) k` to plain
+  Finset-counting on `shellIdx`.
+- `shellIdx_prob_le`: the single unified per-shell Chernoff tail bound for `j≠0`,
+  `p_j ≤ 2·exp(-Δ²(2|j|-1)²/(2m))`.
+
+## Remaining work on Lemma 9 itself (not yet started — see the full hand-derived
+proof above under "The full entropy-sum derivation")
+
+This is the hardest remaining piece — genuinely comparable to the hardest single
+lemmas from the Katona/Kleitman project, and now has a complete, checked-by-hand
+proof sketch with concrete constants (see above), ready to formalize
+step-by-step. Everything built so far (the measure bridge, the Chernoff chain,
+the shell-index bookkeeping) is exactly the infrastructure this needs; no more
+new "supporting" lemmas should be needed before tackling the sum itself
+directly.
 
 ## Immediate next step: the entropy-of-a-shell-index bound
 
