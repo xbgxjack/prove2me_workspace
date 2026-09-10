@@ -1,6 +1,37 @@
 # Plan: proving Komlos.spencer_six_deviations (the 6√n bound)
 
-## STATUS: Lemma 9 is DONE.
+## STATUS: Lemma 9 AND Lemma 8 are DONE.
+
+`lemma8_partial_coloring_round` in `scratch/SpencerEntropyLemma.lean`
+(commit `ed9d7f8`) assembles the n-rows/pigeonhole/Kleitman round: given
+`n` rows on an `m`-active-element set and `λ≥2` with
+`n·(12/log2)·e^{-λ²/4} ≤ m/10`, produces two colorings at Hamming distance
+`> 2·(m/10)` with every row's signed half-difference `≤ λ√m`. Built by
+combining `shannonEntropy_shellFin_le` (Lemma 9) across all `n` rows via
+`shannonEntropy_pi_le`, then `shannonEntropy_pigeonhole`, then
+`choose_sum_le_exp_mul_binEntropy` + `binEntropy_le_log_two_sub_sq`
+(Pinsker bound, avoids computing `Real.binEntropy` numerically) to feed
+`kleitman_diameter`. All these platform-proved dependencies
+(`shannonEntropy_pi_le`, `shannonEntropy_pigeonhole`, `gibbs_inequality`,
+`shannonEntropy_prod_le`, `choose_sum_le_exp_mul_binEntropy`) had to be
+copied into the file under their real names rather than imported directly,
+since their `Solutions/Sol_*.lean` files all name their theorem `solution`
+(a platform grading convention) — importing more than one at once is a
+name clash, and two of them additionally import the *unsolved*
+`Theorems/Thm_*` stub of their own dependency rather than the accepted
+`Solutions/Sol_*` version, so importing them naively would silently ride
+on a hidden `sorry`. `Solutions/Sol_kleitman_diameter` is the one
+exception, imported directly (self-contained, exposes `kleitman_diameter`
+under its real name already).
+
+**Remaining work** (see "Remaining work" section below, now updated):
+the outer geometric iteration (repeatedly apply Lemma 8 with `m_k =
+n·0.9^k`, tracking a per-round `λ_k`), the final cleanup via
+`Komlos.spencer_random_finish`, and assembling everything into
+`Komlos.spencer_six_deviations`. Rough estimate: Lemma 9 + Lemma 8 (the
+two hardest, most novel pieces) are done; the outer iteration is
+"only" bookkeeping (a telescoping sum, already worked out on paper in
+Rothvoss's notes) but is its own substantial Lean undertaking.
 
 `shannonEntropy_shellFin_le` in `scratch/SpencerEntropyLemma.lean` (commit
 `4f75fc1`) is the fully assembled, zero-sorry theorem: for `Δ = λ√m` with
