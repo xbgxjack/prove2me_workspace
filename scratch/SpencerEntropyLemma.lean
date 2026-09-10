@@ -580,4 +580,28 @@ lemma sum_erase_zero_Icc_eq (N : ℕ) (h : ℤ → ℝ) :
   intro x _
   ring
 
+/-- Bridge lemma: a sum over `Finset.Icc (1:ℤ) N` equals the corresponding
+sum over `Finset.Icc (1:ℕ) N`, via the obvious `ℕ ↔ ℤ` bijection on that
+range. Pure integer/natural combinatorics, needed to connect
+`sum_erase_zero_Icc_eq` (stated over `ℤ`) with `peripheral_geom_sum_le`
+(stated over `ℕ`). -/
+lemma sum_Icc_int_nat_eq (N : ℕ) (h : ℤ → ℝ) :
+    ∑ k ∈ Finset.Icc (1:ℤ) (N:ℤ), h k = ∑ k ∈ Finset.Icc 1 N, h (k:ℤ) := by
+  apply Finset.sum_nbij' (i := fun k : ℤ => k.toNat) (j := fun k : ℕ => (k:ℤ))
+  · intro k hk
+    rw [Finset.mem_Icc] at hk ⊢
+    omega
+  · intro k hk
+    rw [Finset.mem_Icc] at hk ⊢
+    omega
+  · intro k hk
+    rw [Finset.mem_Icc] at hk
+    omega
+  · intro k _
+    omega
+  · intro k hk
+    rw [Finset.mem_Icc] at hk
+    congr 1
+    omega
+
 end
