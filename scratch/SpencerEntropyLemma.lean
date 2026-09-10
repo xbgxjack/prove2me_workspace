@@ -1378,4 +1378,145 @@ theorem shannonEntropy_shellFin_le (hm : 1 ≤ m) (a : Fin m → ℝ)
     exact mul_le_mul_of_nonneg_right (by norm_num) (div_nonneg hexppos.le hlog2pos.le)
   linarith [hcentral, hperiph, hgoal12]
 
+/-- **Lemma 8** (Rothvoss/Spencer, one round of the partial-coloring
+schedule): given `n` rows on an `m`-element active set (0/1 coefficients),
+and `λ ≥ 2` satisfying the entropy budget `n·(12/log 2)·e^{-λ²/4} ≤ m/10`,
+there exist two colorings `x y : Fin m → Bool` at Hamming distance
+`> 2·(m/10)` (nat division) such that, writing `χ j := (RSign x j - RSign
+y j)/2` for the signed half-difference, every row `i` has
+`|Σ_j a i j · χ j| ≤ λ√m`. This is the joint-entropy analogue of
+Rothvoss's Lemma 8: instead of a per-row union bound, it bounds all `n`
+row failures jointly via the entropy bound `shannonEntropy_shellFin_le`
+(Lemma 9) combined across rows by `shannonEntropy_pi_le`. -/
+theorem lemma8_partial_coloring_round (n : ℕ) (a : Fin n → Fin m → ℝ)
+    (h01 : ∀ i j, a i j = 0 ∨ a i j = 1) (hm : 1 ≤ m) (lam : ℝ) (hlam : 2 ≤ lam)
+    (hbudget : (n:ℝ) * ((12 / Real.log 2) * Real.exp (-lam^2/4)) ≤ (m:ℝ)/10) :
+    ∃ x y : Fin m → Bool,
+      2 * (m/10) < (univ.filter (fun j => x j ≠ y j)).card ∧
+      ∀ i : Fin n, |∑ j, a i j * ((RSign x j - RSign y j)/2)| ≤ lam * Real.sqrt (m:ℝ) := by
+  have hmR : (1:ℝ) ≤ (m:ℝ) := by exact_mod_cast hm
+  have hmpos : (0:ℝ) < (m:ℝ) := by linarith
+  have hlog2pos : 0 < Real.log 2 := Real.log_pos (by norm_num)
+  set Δ : ℝ := lam * Real.sqrt (m:ℝ) with hΔdef
+  have hsqrtm1 : (1:ℝ) ≤ Real.sqrt (m:ℝ) := by
+    rw [show (1:ℝ) = Real.sqrt 1 by simp]
+    exact Real.sqrt_le_sqrt hmR
+  have hΔge : lam ≤ Δ := by rw [hΔdef]; nlinarith [hsqrtm1]
+  have hΔ : (1:ℝ)/2 ≤ Δ := by linarith
+  have hΔpos : 0 < Δ := by linarith
+  -- The joint (all-n-rows) quantized shell-vector and its entropy bound.
+  set Z : Fin n → (Fin m → Bool) → Fin (2*m+3) := fun i χ => shellFin Δ (a i) χ with hZdef
+  set Z' : (Fin m → Bool) → (Fin n → Fin (2*m+3)) := fun χ i => Z i χ with hZ'def
+  have hH : shannonEntropy Z' ≤ (m:ℝ)/10 := by
+    have hjoint : shannonEntropy Z' ≤ ∑ i, shannonEntropy (Z i) := shannonEntropy_pi_le Z
+    have hrow : ∀ i : Fin n, shannonEntropy (Z i) ≤ (12/Real.log 2) * Real.exp (-lam^2/4) :=
+      fun i => shannonEntropy_shellFin_le hm (a i) (h01 i) lam hlam
+    have hsum_le : ∑ i : Fin n, shannonEntropy (Z i)
+        ≤ (n:ℝ) * ((12/Real.log 2) * Real.exp (-lam^2/4)) := by
+      calc ∑ i : Fin n, shannonEntropy (Z i)
+          ≤ ∑ _i : Fin n, (12/Real.log 2) * Real.exp (-lam^2/4) :=
+            Finset.sum_le_sum (fun i _ => hrow i)
+        _ = (n:ℝ) * ((12/Real.log 2) * Real.exp (-lam^2/4)) := by
+            rw [Finset.sum_const, Finset.card_univ, Fintype.card_fin]; ring
+    linarith [hjoint, hsum_le, hbudget]
+  -- Pigeonhole: some bucket `b` has an exponentially large fiber `A`.
+  have : Nonempty (Fin n → Fin (2*m+3)) := ⟨fun _ => ⟨0, by omega⟩⟩
+  obtain ⟨b, hb⟩ := shannonEntropy_pigeonhole Z'
+  set A : Finset (Fin m → Bool) := univ.filter (fun χ => Z' χ = b) with hAdef
+  have hcardΩ : (Fintype.card (Fin m → Bool) : ℝ) = Real.exp ((m:ℝ) * Real.log 2) := by
+    have h1 : Fintype.card (Fin m → Bool) = 2^m := by rw [Fintype.card_fun]; simp
+    have h2 : Real.exp ((m:ℝ) * Real.log 2) = (2:ℝ)^m := by
+      rw [Real.exp_nat_mul, Real.exp_log (by norm_num : (0:ℝ) < 2)]
+    rw [h1, h2]
+    push_cast
+    ring
+  have hrpow : (2:ℝ)^(-shannonEntropy Z') = Real.exp (-shannonEntropy Z' * Real.log 2) := by
+    rw [Real.rpow_def_of_pos (by norm_num : (0:ℝ) < 2), mul_comm]
+  have hAcard_ge : Real.exp (((m:ℝ) - shannonEntropy Z') * Real.log 2) ≤ (A.card : ℝ) := by
+    have hb' := hb
+    rw [hcardΩ, hrpow, ← Real.exp_add] at hb'
+    rwa [show (m:ℝ) * Real.log 2 + -shannonEntropy Z' * Real.log 2
+        = ((m:ℝ) - shannonEntropy Z') * Real.log 2 by ring] at hb'
+  have hAcard_ge2 : Real.exp ((9*(m:ℝ)/10) * Real.log 2) ≤ (A.card : ℝ) := by
+    calc Real.exp ((9*(m:ℝ)/10) * Real.log 2)
+        ≤ Real.exp (((m:ℝ) - shannonEntropy Z') * Real.log 2) := by
+          apply Real.exp_le_exp.mpr
+          apply mul_le_mul_of_nonneg_right _ hlog2pos.le
+          linarith [hH]
+      _ ≤ (A.card : ℝ) := hAcard_ge
+  -- Kleitman's diameter theorem, via a binEntropy bound on the choose-sum.
+  set s : ℕ := m / 10 with hsdef
+  have hsm : (10:ℕ) * s ≤ m := by rw [hsdef, mul_comm]; exact Nat.div_mul_le_self m 10
+  have h2sm : 2 * s < m := by omega
+  have hchooseR : (∑ i ∈ Finset.range (s + 1), (m.choose i : ℝ))
+      ≤ Real.exp ((m:ℝ) * Real.binEntropy ((s:ℝ)/m)) :=
+    choose_sum_le_exp_mul_binEntropy m s hm (by omega)
+  have hsm_ratio : (s:ℝ)/(m:ℝ) ≤ 1/10 := by
+    rw [div_le_div_iff₀ hmpos (by norm_num : (0:ℝ) < 10)]
+    have h10s : ((10*s : ℕ):ℝ) ≤ (m:ℝ) := by exact_mod_cast hsm
+    push_cast at h10s
+    linarith [h10s]
+  have hsm_nonneg : (0:ℝ) ≤ (s:ℝ)/(m:ℝ) := by positivity
+  have hsm_le1 : (s:ℝ)/(m:ℝ) ≤ 1 := by linarith [hsm_ratio]
+  have hbin_le : Real.binEntropy ((s:ℝ)/m) ≤ Real.log 2 - 2*((s:ℝ)/m - 1/2)^2 :=
+    binEntropy_le_log_two_sub_sq ((s:ℝ)/m) hsm_nonneg hsm_le1
+  have hsq_ge : (0.4:ℝ)^2 ≤ ((s:ℝ)/m - 1/2)^2 := by nlinarith [hsm_ratio]
+  have hbin_lt : Real.binEntropy ((s:ℝ)/m) < (9/10) * Real.log 2 := by
+    have hlog2_bd : Real.log 2 < 3.2 := by linarith [Real.log_two_lt_d9]
+    nlinarith [hbin_le, hsq_ge, hlog2_bd]
+  have hexp_lt : Real.exp ((m:ℝ) * Real.binEntropy ((s:ℝ)/m))
+      < Real.exp ((9*(m:ℝ)/10) * Real.log 2) := by
+    apply Real.exp_lt_exp.mpr
+    nlinarith [mul_lt_mul_of_pos_left hbin_lt hmpos]
+  have hchoose_lt : (∑ i ∈ Finset.range (s + 1), (m.choose i : ℝ)) < (A.card : ℝ) :=
+    lt_of_le_of_lt hchooseR hexp_lt |>.trans_le hAcard_ge2
+  have hchoose_lt_nat : (∑ i ∈ Finset.range (s + 1), m.choose i) < A.card := by
+    exact_mod_cast hchoose_lt
+  have hcardι : Fintype.card (Fin m) = m := Fintype.card_fin m
+  have hAhyp : (∑ i ∈ Finset.range (s + 1), (Fintype.card (Fin m)).choose i) < A.card := by
+    rwa [hcardι]
+  have hsι : 2 * s < Fintype.card (Fin m) := by rwa [hcardι]
+  obtain ⟨x, hxA, y, hyA, hdist⟩ := kleitman_diameter s hsι A hAhyp
+  refine ⟨x, y, hdist, ?_⟩
+  have hxmem : ∀ i, shellFin Δ (a i) x = b i := by
+    intro i
+    have hx := hxA
+    rw [hAdef, Finset.mem_filter] at hx
+    exact congrFun hx.2 i
+  have hymem : ∀ i, shellFin Δ (a i) y = b i := by
+    intro i
+    have hy := hyA
+    rw [hAdef, Finset.mem_filter] at hy
+    exact congrFun hy.2 i
+  intro i
+  have heqshell : shellFin Δ (a i) x = shellFin Δ (a i) y := by rw [hxmem i, hymem i]
+  have heqidx : shellIdx Δ (a i) x = shellIdx Δ (a i) y := by
+    have h1 : shellIdx Δ (a i) x = (shellFin Δ (a i) x : ℤ) - (m+1) :=
+      (shellFin_eq_iff Δ (a i) (h01 i) hΔ x (shellFin Δ (a i) x)).mp rfl
+    have h2 : shellIdx Δ (a i) y = (shellFin Δ (a i) y : ℤ) - (m+1) :=
+      (shellFin_eq_iff Δ (a i) (h01 i) hΔ y (shellFin Δ (a i) y)).mp rfl
+    rw [h1, h2, heqshell]
+  have hdx := shellIdx_dist Δ (a i) x hΔpos
+  have hdy := shellIdx_dist Δ (a i) y hΔpos
+  rw [heqidx] at hdx
+  have hdiff : |rowSumB (a i) x - rowSumB (a i) y| ≤ 2*Δ := by
+    have htri := abs_sub_le (rowSumB (a i) x) (2*Δ*(shellIdx Δ (a i) y:ℝ)) (rowSumB (a i) y)
+    have hcomm : |2*Δ*(shellIdx Δ (a i) y:ℝ) - rowSumB (a i) y|
+        = |rowSumB (a i) y - 2*Δ*(shellIdx Δ (a i) y:ℝ)| := abs_sub_comm _ _
+    rw [hcomm] at htri
+    calc |rowSumB (a i) x - rowSumB (a i) y|
+        ≤ |rowSumB (a i) x - 2*Δ*(shellIdx Δ (a i) y:ℝ)|
+          + |rowSumB (a i) y - 2*Δ*(shellIdx Δ (a i) y:ℝ)| := htri
+      _ ≤ Δ + Δ := add_le_add hdx hdy
+      _ = 2*Δ := by ring
+  have hrel : rowSumB (a i) x - rowSumB (a i) y
+      = 2 * ∑ j, a i j * ((RSign x j - RSign y j)/2) := by
+    unfold rowSumB
+    rw [← Finset.sum_sub_distrib, Finset.mul_sum]
+    apply Finset.sum_congr rfl
+    intro j _
+    ring
+  rw [hrel, abs_mul, show |(2:ℝ)| = 2 from by norm_num] at hdiff
+  linarith [hdiff]
+
 end
