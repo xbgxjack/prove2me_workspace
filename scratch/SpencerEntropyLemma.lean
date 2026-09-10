@@ -1,7 +1,585 @@
 import Mathlib
 import Definitions.Def_DiscreteEntropy
+import Solutions.Sol_kleitman_diameter
 
 open Finset MeasureTheory ProbabilityTheory
+
+/-! Platform-accepted facts needed for the assembly below, reproduced here
+under their proper names. NOTE: `Solutions.Sol_shannonEntropy_pi_le`,
+`Solutions.Sol_shannonEntropy_pigeonhole`, `Solutions.Sol_gibbs_inequality`,
+`Solutions.Sol_shannonEntropy_prod_le`, and
+`Solutions.Sol_choose_sum_le_exp_mul_binEntropy` cannot be imported directly:
+each names its main theorem `solution` (a platform grading convention), so
+importing more than one at once is a hard name clash, and
+`Sol_shannonEntropy_pi_le`/`Sol_shannonEntropy_prod_le` additionally import
+the *unsolved* `Theorems.Thm_*` stub of their dependency rather than the
+accepted `Solutions.Sol_*` version. The proofs below are copied verbatim
+from the accepted Solutions files (only the theorem names and internal
+cross-references are fixed up); `Solutions.Sol_kleitman_diameter` is
+imported directly above since it is self-contained and already exposes
+`kleitman_diameter` under its real name. -/
+
+noncomputable section
+
+variable {γ' : Type*} [Fintype γ']
+
+theorem gibbs_inequality (p q : γ' → ℝ)
+    (hp0 : ∀ x, 0 ≤ p x) (hq0 : ∀ x, 0 ≤ q x)
+    (hpq : ∀ x, p x ≠ 0 → q x ≠ 0)
+    (hpsum : ∑ x, p x = 1) (hqsum : ∑ x, q x = 1) :
+    ∑ x ∈ univ.filter (fun x => p x ≠ 0), p x * Real.log (q x / p x) ≤ 0 := by
+  set S := univ.filter (fun x => p x ≠ 0) with hS_def
+  have hpsumS : ∑ x ∈ S, p x = 1 := by
+    rw [← hpsum, hS_def]
+    apply Finset.sum_subset (Finset.filter_subset _ _)
+    intro x _ hx
+    simp only [Finset.mem_filter, mem_univ, true_and, not_not] at hx
+    exact hx
+  have hterm : ∀ x ∈ S, p x * Real.log (q x / p x) ≤ q x - p x := by
+    intro x hx
+    simp only [hS_def, Finset.mem_filter] at hx
+    have hpxpos : 0 < p x := lt_of_le_of_ne (hp0 x) (Ne.symm hx.2)
+    have hqxpos : 0 < q x := lt_of_le_of_ne (hq0 x) (Ne.symm (hpq x hx.2))
+    have hlog : Real.log (q x / p x) ≤ q x / p x - 1 :=
+      Real.log_le_sub_one_of_pos (div_pos hqxpos hpxpos)
+    calc p x * Real.log (q x / p x) ≤ p x * (q x / p x - 1) :=
+          mul_le_mul_of_nonneg_left hlog (hp0 x)
+      _ = q x - p x := by field_simp
+  have hqsumS : ∑ x ∈ S, q x ≤ ∑ x, q x := by
+    apply Finset.sum_le_sum_of_subset_of_nonneg (Finset.filter_subset _ _)
+    intro x _ _
+    exact hq0 x
+  calc ∑ x ∈ S, p x * Real.log (q x / p x)
+      ≤ ∑ x ∈ S, (q x - p x) := Finset.sum_le_sum hterm
+    _ = (∑ x ∈ S, q x) - ∑ x ∈ S, p x := by rw [Finset.sum_sub_distrib]
+    _ ≤ (∑ x, q x) - ∑ x ∈ S, p x := by linarith
+    _ = 1 - 1 := by rw [hqsum, hpsumS]
+    _ = 0 := by ring
+
+variable {Ω β1 β2 : Type*} [Fintype Ω] [Fintype β1] [Fintype β2]
+  [DecidableEq β1] [DecidableEq β2] [Nonempty Ω]
+
+private lemma marginal1_eq (Z1 : Ω → β1) (Z2 : Ω → β2) (a : β1) :
+    ∑ b : β2, empiricalProb (fun ω => (Z1 ω, Z2 ω)) (a, b) = empiricalProb Z1 a := by
+  unfold empiricalProb
+  rw [← Finset.sum_div]
+  congr 1
+  have h1 : (univ.filter (fun ω => Z1 ω = a)).card
+      = ∑ b : β2, ((univ.filter (fun ω => Z1 ω = a)).filter (fun ω => Z2 ω = b)).card :=
+    Finset.card_eq_sum_card_fiberwise (fun ω _ => mem_univ (Z2 ω))
+  rw [h1]
+  push_cast
+  apply Finset.sum_congr rfl
+  intro b _
+  congr 2
+  ext ω
+  simp only [Finset.mem_filter, mem_univ, true_and, Prod.mk.injEq]
+
+private lemma marginal2_eq (Z1 : Ω → β1) (Z2 : Ω → β2) (b : β2) :
+    ∑ a : β1, empiricalProb (fun ω => (Z1 ω, Z2 ω)) (a, b) = empiricalProb Z2 b := by
+  unfold empiricalProb
+  rw [← Finset.sum_div]
+  congr 1
+  have h1 : (univ.filter (fun ω => Z2 ω = b)).card
+      = ∑ a : β1, ((univ.filter (fun ω => Z2 ω = b)).filter (fun ω => Z1 ω = a)).card :=
+    Finset.card_eq_sum_card_fiberwise (fun ω _ => mem_univ (Z1 ω))
+  rw [h1]
+  push_cast
+  apply Finset.sum_congr rfl
+  intro a _
+  congr 2
+  ext ω
+  simp only [Finset.mem_filter, mem_univ, true_and, Prod.mk.injEq]
+  tauto
+
+theorem shannonEntropy_prod_le {Ω β1 β2 : Type*} [Fintype Ω] [Fintype β1] [Fintype β2]
+    [DecidableEq β1] [DecidableEq β2] [Nonempty Ω]
+    (Z1 : Ω → β1) (Z2 : Ω → β2) :
+    shannonEntropy (fun ω => (Z1 ω, Z2 ω)) ≤ shannonEntropy Z1 + shannonEntropy Z2 := by
+  set P : Ω → β1 × β2 := fun ω => (Z1 ω, Z2 ω) with hP_def
+  set p : β1 × β2 → ℝ := empiricalProb P with hp_def
+  set q : β1 × β2 → ℝ := fun x => empiricalProb Z1 x.1 * empiricalProb Z2 x.2 with hq_def
+  have hpq : ∀ x : β1 × β2, p x ≠ 0 → q x ≠ 0 := by
+    rintro ⟨a, b⟩ hpne
+    have hcardpos : 0 < (univ.filter (fun ω => P ω = (a, b))).card := by
+      rcases Nat.eq_zero_or_pos (univ.filter (fun ω => P ω = (a, b))).card with h0 | h0
+      · exfalso; apply hpne
+        rw [hp_def]; unfold empiricalProb; rw [h0]; simp
+      · exact h0
+    obtain ⟨ω0, hω0⟩ := Finset.card_pos.mp hcardpos
+    simp only [Finset.mem_filter, hP_def, Prod.mk.injEq] at hω0
+    have h1 : empiricalProb Z1 a ≠ 0 := by
+      unfold empiricalProb
+      have : (univ.filter (fun ω => Z1 ω = a)).Nonempty := ⟨ω0, by simp [hω0.2.1]⟩
+      positivity
+    have h2 : empiricalProb Z2 b ≠ 0 := by
+      unfold empiricalProb
+      have : (univ.filter (fun ω => Z2 ω = b)).Nonempty := ⟨ω0, by simp [hω0.2.2]⟩
+      positivity
+    exact mul_ne_zero h1 h2
+  have hqsum : ∑ x : β1 × β2, q x = 1 := by
+    rw [Fintype.sum_prod_type]
+    simp only [hq_def]
+    rw [← Finset.sum_mul_sum]
+    rw [sum_empiricalProb Z1, sum_empiricalProb Z2]
+    ring
+  have hgibbs := gibbs_inequality p q (empiricalProb_nonneg P)
+    (fun x => mul_nonneg (empiricalProb_nonneg Z1 x.1) (empiricalProb_nonneg Z2 x.2))
+    hpq (sum_empiricalProb P) hqsum
+  set S := univ.filter (fun x : β1 × β2 => p x ≠ 0) with hS_def
+  have hlogsplit : ∀ x ∈ S, p x * Real.log (q x / p x)
+      = p x * Real.log (empiricalProb Z1 x.1) + p x * Real.log (empiricalProb Z2 x.2)
+          - p x * Real.log (p x) := by
+    intro x hx
+    simp only [hS_def, Finset.mem_filter] at hx
+    have hpxpos : 0 < p x := lt_of_le_of_ne (empiricalProb_nonneg P x) (Ne.symm hx.2)
+    have hqxpos : 0 < q x := lt_of_le_of_ne
+      (mul_nonneg (empiricalProb_nonneg Z1 x.1) (empiricalProb_nonneg Z2 x.2))
+      (Ne.symm (hpq x hx.2))
+    have h1pos : 0 < empiricalProb Z1 x.1 := by
+      by_contra hcon
+      push_neg at hcon
+      have := empiricalProb_nonneg Z1 x.1
+      have heq0 : empiricalProb Z1 x.1 = 0 := le_antisymm hcon this
+      rw [hq_def] at hqxpos
+      simp only [heq0, zero_mul] at hqxpos
+      exact absurd hqxpos (lt_irrefl 0)
+    have h2pos : 0 < empiricalProb Z2 x.2 := by
+      by_contra hcon
+      push_neg at hcon
+      have := empiricalProb_nonneg Z2 x.2
+      have heq0 : empiricalProb Z2 x.2 = 0 := le_antisymm hcon this
+      rw [hq_def] at hqxpos
+      simp only [heq0, mul_zero] at hqxpos
+      exact absurd hqxpos (lt_irrefl 0)
+    rw [hq_def]
+    simp only
+    rw [Real.log_div (by positivity) (ne_of_gt hpxpos), Real.log_mul (ne_of_gt h1pos) (ne_of_gt h2pos)]
+    ring
+  rw [Finset.sum_congr rfl hlogsplit] at hgibbs
+  rw [Finset.sum_sub_distrib, Finset.sum_add_distrib] at hgibbs
+  have hext : ∀ (f : β1 × β2 → ℝ), (∀ x, p x = 0 → f x = 0) →
+      ∑ x ∈ S, f x = ∑ x : β1 × β2, f x := by
+    intro f hf
+    rw [hS_def]
+    refine Finset.sum_subset (Finset.filter_subset _ _) ?_
+    intro x _ hx
+    simp only [Finset.mem_filter, mem_univ, true_and, not_not] at hx
+    exact hf x hx
+  have hterm1 : ∑ x ∈ S, p x * Real.log (empiricalProb Z1 x.1)
+      = ∑ a : β1, empiricalProb Z1 a * Real.log (empiricalProb Z1 a) := by
+    rw [hext (fun x => p x * Real.log (empiricalProb Z1 x.1)) (fun x hx => by rw [hx]; ring)]
+    rw [Fintype.sum_prod_type]
+    apply Finset.sum_congr rfl
+    intro a _
+    dsimp only
+    rw [← Finset.sum_mul, marginal1_eq]
+  have hterm2 : ∑ x ∈ S, p x * Real.log (empiricalProb Z2 x.2)
+      = ∑ b : β2, empiricalProb Z2 b * Real.log (empiricalProb Z2 b) := by
+    rw [hext (fun x => p x * Real.log (empiricalProb Z2 x.2)) (fun x hx => by rw [hx]; ring)]
+    rw [Fintype.sum_prod_type]
+    rw [Finset.sum_comm]
+    apply Finset.sum_congr rfl
+    intro b _
+    dsimp only
+    rw [← Finset.sum_mul, marginal2_eq]
+  have hterm3 : ∑ x ∈ S, p x * Real.log (p x) = ∑ x : β1 × β2, p x * Real.log (p x) :=
+    hext (fun x => p x * Real.log (p x)) (fun x hx => by rw [hx]; ring)
+  rw [hterm1, hterm2, hterm3, hp_def] at hgibbs
+  have hlog2 : Real.log 2 ≠ 0 := by
+    have := Real.log_pos (by norm_num : (1:ℝ) < 2); linarith
+  have hconvP : ∑ x : β1 × β2, empiricalProb P x * Real.log (empiricalProb P x)
+      = - Real.log 2 * shannonEntropy P := by
+    unfold shannonEntropy
+    rw [Finset.mul_sum]
+    apply Finset.sum_congr rfl
+    intro x _
+    by_cases hx : empiricalProb P x = 0
+    · simp [hx]
+    · simp only [hx, if_false]
+      rw [Real.logb, one_div, Real.log_inv]
+      field_simp
+  have hconvZ1 : ∑ a : β1, empiricalProb Z1 a * Real.log (empiricalProb Z1 a)
+      = - Real.log 2 * shannonEntropy Z1 := by
+    unfold shannonEntropy
+    rw [Finset.mul_sum]
+    apply Finset.sum_congr rfl
+    intro a _
+    by_cases ha : empiricalProb Z1 a = 0
+    · simp [ha]
+    · simp only [ha, if_false]
+      rw [Real.logb, one_div, Real.log_inv]
+      field_simp
+  have hconvZ2 : ∑ b : β2, empiricalProb Z2 b * Real.log (empiricalProb Z2 b)
+      = - Real.log 2 * shannonEntropy Z2 := by
+    unfold shannonEntropy
+    rw [Finset.mul_sum]
+    apply Finset.sum_congr rfl
+    intro b _
+    by_cases hb : empiricalProb Z2 b = 0
+    · simp [hb]
+    · simp only [hb, if_false]
+      rw [Real.logb, one_div, Real.log_inv]
+      field_simp
+  rw [hconvP, hconvZ1, hconvZ2] at hgibbs
+  have hlog2pos : 0 < Real.log 2 := Real.log_pos (by norm_num)
+  nlinarith [hgibbs]
+
+private lemma shannonEntropy_comp_equiv {Ω : Type*} [Fintype Ω] [Nonempty Ω]
+    {β β' : Type*} [Fintype β] [DecidableEq β]
+    [Fintype β'] [DecidableEq β'] (e : β ≃ β') (Z : Ω → β) :
+    shannonEntropy (fun ω => e (Z ω)) = shannonEntropy Z := by
+  unfold shannonEntropy
+  rw [← Equiv.sum_comp e (fun b' => (fun p => if p = 0 then 0 else p * Real.logb 2 (1 / p))
+      (empiricalProb (fun ω => e (Z ω)) b'))]
+  apply Finset.sum_congr rfl
+  intro b _
+  have hset : (univ.filter (fun ω => e (Z ω) = e b)) = univ.filter (fun ω => Z ω = b) := by
+    apply Finset.filter_congr
+    intro ω _
+    exact ⟨fun h => e.injective h, fun h => by rw [h]⟩
+  simp only [empiricalProb, hset]
+  rfl
+
+private lemma shannonEntropy_of_unique {Ω : Type*} [Fintype Ω] [Nonempty Ω]
+    {β : Type*} [Fintype β] [DecidableEq β] [Unique β]
+    (Z : Ω → β) : shannonEntropy Z = 0 := by
+  have hZ : ∀ ω, Z ω = default := fun ω => Subsingleton.elim _ _
+  have huniv : (univ : Finset β) = {default} := by
+    apply Finset.eq_singleton_iff_unique_mem.mpr
+    exact ⟨mem_univ _, fun x _ => Subsingleton.elim x default⟩
+  have hprob : empiricalProb Z default = 1 := by
+    unfold empiricalProb
+    have hfilt : (univ.filter (fun ω => Z ω = default)) = univ := by
+      apply Finset.filter_true_of_mem
+      intro ω _; exact hZ ω
+    rw [hfilt, Finset.card_univ]
+    have : (Fintype.card Ω : ℝ) ≠ 0 := by
+      have := Fintype.card_pos (α := Ω); positivity
+    field_simp
+  unfold shannonEntropy
+  rw [huniv, Finset.sum_singleton, hprob]
+  simp
+
+theorem shannonEntropy_pi_le {Ω : Type*} [Fintype Ω] [Nonempty Ω]
+    {n : ℕ} {γ : Type*} [Fintype γ] [DecidableEq γ]
+    (Z : Fin n → Ω → γ) :
+    shannonEntropy (fun ω i => Z i ω) ≤ ∑ i, shannonEntropy (Z i) := by
+  induction n with
+  | zero =>
+    have : Unique (Fin 0 → γ) := Pi.uniqueOfIsEmpty _
+    rw [shannonEntropy_of_unique]
+    simp
+  | succ n ih =>
+    set e : (Fin (n+1) → γ) ≃ γ × (Fin n → γ) :=
+      (Equiv.arrowCongr (finSuccEquiv n) (Equiv.refl γ)).trans Equiv.piOptionEquivProd
+      with he_def
+    have hcomp : (fun ω => e (fun i => Z i ω)) = fun ω => (Z 0 ω, fun i => Z i.succ ω) := by
+      funext ω
+      simp only [he_def, Equiv.trans_apply, Equiv.arrowCongr_apply, Equiv.coe_refl,
+        Equiv.piOptionEquivProd, Equiv.coe_fn_mk, Function.comp_apply, id_eq]
+      refine Prod.ext ?_ ?_
+      · simp
+      · funext i
+        simp
+    have hkey := shannonEntropy_comp_equiv e (fun ω i => Z i ω)
+    rw [hcomp] at hkey
+    rw [← hkey]
+    have hstep := shannonEntropy_prod_le (Z 0) (fun (ω : Ω) (i : Fin n) => Z i.succ ω)
+    have hind := ih (fun (i : Fin n) => Z i.succ)
+    have hsum : ∑ i : Fin (n+1), shannonEntropy (Z i)
+        = shannonEntropy (Z 0) + ∑ i : Fin n, shannonEntropy (Z i.succ) := by
+      rw [Fin.sum_univ_succ]
+    rw [hsum]
+    linarith
+
+private lemma exists_max_empiricalProb {Ω β : Type*} [Fintype Ω] [Fintype β] [DecidableEq β]
+    [Nonempty Ω] (Z : Ω → β) [Nonempty β] :
+    ∃ b : β, ∀ b' : β, empiricalProb Z b' ≤ empiricalProb Z b := by
+  obtain ⟨b, -, hb⟩ := Finset.exists_max_image (univ : Finset β) (empiricalProb Z) univ_nonempty
+  exact ⟨b, fun b' => hb b' (mem_univ b')⟩
+
+private lemma shannonEntropy_ge_neg_logb_max {Ω β : Type*} [Fintype Ω] [Fintype β] [DecidableEq β]
+    [Nonempty Ω] (Z : Ω → β) [Nonempty β] (b : β)
+    (hb : ∀ b' : β, empiricalProb Z b' ≤ empiricalProb Z b) (hbpos : 0 < empiricalProb Z b) :
+    -Real.logb 2 (empiricalProb Z b) ≤ shannonEntropy Z := by
+  unfold shannonEntropy
+  have hsplit : ∑ b' : β, (fun p => if p = 0 then 0 else p * Real.logb 2 (1/p)) (empiricalProb Z b')
+      = ∑ b' ∈ univ.filter (fun b' => empiricalProb Z b' ≠ 0),
+          (empiricalProb Z b') * Real.logb 2 (1/(empiricalProb Z b')) := by
+    rw [← Finset.sum_filter_add_sum_filter_not univ (fun b' => empiricalProb Z b' ≠ 0)]
+    have hz : ∑ b' ∈ univ.filter (fun b' => ¬ empiricalProb Z b' ≠ 0),
+        (fun p => if p = 0 then 0 else p * Real.logb 2 (1/p)) (empiricalProb Z b') = 0 := by
+      apply Finset.sum_eq_zero
+      intro b' hb'
+      simp only [Finset.mem_filter, not_not] at hb'
+      simp [hb'.2]
+    rw [hz, add_zero]
+    apply Finset.sum_congr rfl
+    intro b' hb'
+    simp only [Finset.mem_filter] at hb'
+    simp [hb'.2]
+  rw [hsplit]
+  have hterm : ∀ b' ∈ univ.filter (fun b' => empiricalProb Z b' ≠ 0),
+      (empiricalProb Z b') * Real.logb 2 (1/(empiricalProb Z b))
+        ≤ (empiricalProb Z b') * Real.logb 2 (1/(empiricalProb Z b')) := by
+    intro b' hb'
+    simp only [Finset.mem_filter] at hb'
+    have hb'pos : 0 < empiricalProb Z b' :=
+      lt_of_le_of_ne (empiricalProb_nonneg Z b') (Ne.symm hb'.2)
+    have hmono : Real.logb 2 (1/(empiricalProb Z b)) ≤ Real.logb 2 (1/(empiricalProb Z b')) :=
+      Real.logb_le_logb_of_le (by norm_num) (by positivity)
+        (div_le_div_of_nonneg_left (by norm_num) hb'pos (hb b'))
+    exact mul_le_mul_of_nonneg_left hmono (empiricalProb_nonneg Z b')
+  calc -Real.logb 2 (empiricalProb Z b)
+      = ∑ b' ∈ univ.filter (fun b' => empiricalProb Z b' ≠ 0),
+          (empiricalProb Z b') * Real.logb 2 (1/(empiricalProb Z b)) := by
+        rw [← Finset.sum_mul, show (∑ b' ∈ univ.filter (fun b' => empiricalProb Z b' ≠ 0),
+          empiricalProb Z b') = 1 from ?_]
+        · rw [one_mul, Real.logb_div (by norm_num) (by positivity), Real.logb_one]
+          ring
+        · have h1 := sum_empiricalProb Z (Ω := Ω)
+          rw [← Finset.sum_filter_add_sum_filter_not univ (fun b' => empiricalProb Z b' ≠ 0)] at h1
+          have hz : ∑ b' ∈ univ.filter (fun b' => ¬ empiricalProb Z b' ≠ 0), empiricalProb Z b' = 0 := by
+            apply Finset.sum_eq_zero
+            intro b' hb'
+            simp only [Finset.mem_filter, not_not] at hb'
+            exact hb'.2
+          rw [hz, add_zero] at h1
+          exact h1
+    _ ≤ ∑ b' ∈ univ.filter (fun b' => empiricalProb Z b' ≠ 0),
+          (empiricalProb Z b') * Real.logb 2 (1/(empiricalProb Z b')) :=
+        Finset.sum_le_sum hterm
+
+theorem shannonEntropy_pigeonhole {Ω β : Type*} [Fintype Ω] [Fintype β] [DecidableEq β]
+    [Nonempty Ω] (Z : Ω → β) [Nonempty β] :
+    ∃ b : β, (Fintype.card Ω : ℝ) * (2:ℝ) ^ (-shannonEntropy Z)
+        ≤ ((univ.filter (fun ω => Z ω = b)).card : ℝ) := by
+  obtain ⟨b, hb⟩ := exists_max_empiricalProb (Z := Z)
+  have hbpos : 0 < empiricalProb Z b := by
+    by_contra hcon
+    push_neg at hcon
+    have hb0 : empiricalProb Z b = 0 := le_antisymm hcon (empiricalProb_nonneg Z b)
+    have hall0 : ∀ b' : β, empiricalProb Z b' = 0 := by
+      intro b'
+      have := hb b'
+      rw [hb0] at this
+      exact le_antisymm this (empiricalProb_nonneg Z b')
+    have hsum := sum_empiricalProb Z (Ω := Ω)
+    simp only [hall0, Finset.sum_const_zero] at hsum
+    norm_num at hsum
+  refine ⟨b, ?_⟩
+  have hge := shannonEntropy_ge_neg_logb_max Z b hb hbpos
+  have h2 : (2:ℝ)^(-shannonEntropy Z) ≤ (2:ℝ)^(Real.logb 2 (empiricalProb Z b)) := by
+    apply Real.rpow_le_rpow_left_iff (x := (2:ℝ)) (by norm_num) |>.mpr
+    linarith
+  have h3 : (2:ℝ)^(Real.logb 2 (empiricalProb Z b)) = empiricalProb Z b := by
+    rw [Real.rpow_logb (by norm_num) (by norm_num) hbpos]
+  rw [h3] at h2
+  unfold empiricalProb at h2
+  have hcard : (0:ℝ) < (Fintype.card Ω : ℝ) := by
+    have := Fintype.card_pos (α := Ω); positivity
+  calc (Fintype.card Ω : ℝ) * (2:ℝ)^(-shannonEntropy Z)
+      ≤ (Fintype.card Ω : ℝ) * (((univ.filter (fun ω => Z ω = b)).card : ℝ) / (Fintype.card Ω : ℝ)) := by
+        apply mul_le_mul_of_nonneg_left h2 (le_of_lt hcard)
+    _ = (univ.filter (fun ω => Z ω = b)).card := by
+        field_simp
+
+theorem choose_sum_le_exp_mul_binEntropy (n k : ℕ) (hn : 0 < n) (hk2 : 2 * k ≤ n) :
+    (∑ i ∈ Finset.range (k + 1), (n.choose i : ℝ)) ≤ Real.exp (n * Real.binEntropy ((k : ℝ) / n)) := by
+  set lam : ℝ := (k : ℝ) / n with hlam_def
+  have hnR : (0:ℝ) < n := by exact_mod_cast hn
+  have hlam0 : 0 ≤ lam := by positivity
+  have h2k : (2:ℝ) * (k:ℝ) ≤ (n:ℝ) := by exact_mod_cast hk2
+  have hnlam0 : (n : ℝ) * lam = k := by rw [hlam_def]; field_simp
+  have hlam1 : lam ≤ 1 - lam := by nlinarith [hnlam0, hnR]
+  have h1lam_nonneg0 : (0:ℝ) ≤ 1 - lam := by linarith
+  have hkey : ∀ j ≤ k, lam ^ k * (1 - lam) ^ (n - k) ≤ lam ^ j * (1 - lam) ^ (n - j) := by
+    intro j hjk
+    have hnk : n - j = (n - k) + (k - j) := by omega
+    rw [hnk, pow_add]
+    have hle : lam ^ (k - j) ≤ (1 - lam) ^ (k - j) := pow_le_pow_left₀ hlam0 hlam1 _
+    calc lam ^ k * (1 - lam) ^ (n - k)
+        = lam ^ j * lam ^ (k - j) * (1 - lam) ^ (n - k) := by
+          rw [← pow_add]; congr 2; omega
+      _ ≤ lam ^ j * (1 - lam) ^ (k - j) * (1 - lam) ^ (n - k) := by
+          have h1lam_nonneg : (0:ℝ) ≤ 1 - lam := by linarith
+          apply mul_le_mul_of_nonneg_right _ (by positivity)
+          exact mul_le_mul_of_nonneg_left hle (by positivity)
+      _ = lam ^ j * ((1 - lam) ^ (n - k) * (1 - lam) ^ (k - j)) := by ring
+  have hstep : ∀ j ∈ Finset.range (k + 1),
+      (n.choose j : ℝ) * (lam ^ k * (1 - lam) ^ (n - k))
+        ≤ (n.choose j : ℝ) * (lam ^ j * (1 - lam) ^ (n - j)) := by
+    intro j hj
+    simp only [Finset.mem_range] at hj
+    exact mul_le_mul_of_nonneg_left (hkey j (by omega)) (by positivity)
+  have hsumC : (∑ j ∈ Finset.range (k + 1), (n.choose j : ℝ)) * (lam ^ k * (1 - lam) ^ (n - k))
+      ≤ ∑ j ∈ Finset.range (k + 1), (n.choose j : ℝ) * (lam ^ j * (1 - lam) ^ (n - j)) := by
+    rw [Finset.sum_mul]
+    exact Finset.sum_le_sum hstep
+  have hsum2 : ∑ j ∈ Finset.range (k + 1), (n.choose j : ℝ) * (lam ^ j * (1 - lam) ^ (n - j))
+      ≤ ∑ j ∈ Finset.range (n + 1), (n.choose j : ℝ) * (lam ^ j * (1 - lam) ^ (n - j)) := by
+    apply Finset.sum_le_sum_of_subset_of_nonneg
+    · exact Finset.range_subset_range.mpr (by omega)
+    · intro j _ _
+      exact mul_nonneg (by positivity) (mul_nonneg (by positivity) (pow_nonneg h1lam_nonneg0 _))
+  have hbin : ∑ j ∈ Finset.range (n + 1), (n.choose j : ℝ) * (lam ^ j * (1 - lam) ^ (n - j)) = 1 := by
+    have hap := add_pow lam (1 - lam) n
+    simp only [add_sub_cancel, one_pow] at hap
+    have hreindex : ∑ j ∈ Finset.range (n + 1), (n.choose j : ℝ) * (lam ^ j * (1 - lam) ^ (n - j))
+        = ∑ m ∈ Finset.range (n + 1), lam ^ m * (1 - lam) ^ (n - m) * (n.choose m : ℝ) := by
+      apply Finset.sum_congr rfl
+      intro j _; ring
+    rw [hreindex, ← hap]
+  have hfinal : (∑ j ∈ Finset.range (k + 1), (n.choose j : ℝ)) * (lam ^ k * (1 - lam) ^ (n - k)) ≤ 1 := by
+    calc (∑ j ∈ Finset.range (k + 1), (n.choose j : ℝ)) * (lam ^ k * (1 - lam) ^ (n - k))
+        ≤ ∑ j ∈ Finset.range (k + 1), (n.choose j : ℝ) * (lam ^ j * (1 - lam) ^ (n - j)) := hsumC
+      _ ≤ ∑ j ∈ Finset.range (n + 1), (n.choose j : ℝ) * (lam ^ j * (1 - lam) ^ (n - j)) := hsum2
+      _ = 1 := hbin
+  rcases eq_or_lt_of_le hlam0 with hlam0' | hlam0'
+  · have hk0 : k = 0 := by
+      by_contra hk0'
+      have hkpos : 0 < k := Nat.pos_of_ne_zero hk0'
+      have hlampos : (0:ℝ) < lam := by rw [hlam_def]; positivity
+      linarith [hlam0']
+    subst hk0
+    simp only [hlam_def, Nat.cast_zero, zero_div, Real.binEntropy_zero, mul_zero, Real.exp_zero]
+    norm_num
+  · have hlam1' : lam < 1 := by linarith
+    have hpos : 0 < lam ^ k * (1 - lam) ^ (n - k) := by positivity
+    have hdiv : (∑ j ∈ Finset.range (k + 1), (n.choose j : ℝ)) ≤ 1 / (lam ^ k * (1 - lam) ^ (n - k)) := by
+      rw [le_div_iff₀ hpos]
+      exact hfinal
+    refine hdiv.trans (le_of_eq ?_)
+    have hkn : k ≤ n := by omega
+    have hcast : ((n - k : ℕ) : ℝ) = (n : ℝ) - k := by push_cast [hkn]; ring
+    have hnlam : (n : ℝ) * lam = k := by rw [hlam_def]; field_simp
+    have hn1lam : (n : ℝ) * (1 - lam) = (n : ℝ) - k := by
+      rw [hlam_def]; field_simp
+    have h1lam_pos : (0:ℝ) < 1 - lam := by linarith
+    have hRHSpos : (0:ℝ) < lam⁻¹ ^ k * (1 - lam)⁻¹ ^ (n - k) := by positivity
+    have hlogRHS : Real.log (lam⁻¹ ^ k * (1 - lam)⁻¹ ^ (n - k))
+        = (n : ℝ) * Real.binEntropy lam := by
+      rw [Real.log_mul (by positivity) (by positivity), Real.log_pow, Real.log_pow,
+        Real.log_inv, Real.log_inv, hcast, Real.binEntropy, Real.log_inv, Real.log_inv]
+      linear_combination (Real.log lam - Real.log (1 - lam)) * hnlam
+    rw [← hlogRHS, Real.exp_log hRHSpos, one_div, mul_inv, inv_pow, inv_pow]
+
+/-- Pinsker-type quantitative bound for the binary entropy function (natural-log
+based `Real.binEntropy`): the entropy deficit from `log 2` controls how far `p`
+is from `1/2`, quadratically. Reused below to get a clean, easy-to-verify bound
+on `binEntropy` at a small ratio without computing its value numerically. -/
+theorem binEntropy_le_log_two_sub_sq (p : ℝ) (hp0 : 0 ≤ p) (hp1 : p ≤ 1) :
+    Real.binEntropy p ≤ Real.log 2 - 2 * (p - 1/2)^2 := by
+  set g : ℝ → ℝ := fun p => Real.binEntropy p + 2 * (p - 1/2)^2 with hg_def
+  have hgcont : ContinuousOn g (Set.Icc 0 1) := by
+    apply Continuous.continuousOn
+    simp only [hg_def]
+    fun_prop
+  have hgdiff : DifferentiableOn ℝ g (interior (Set.Icc (0:ℝ) 1)) := by
+    rw [interior_Icc]
+    intro p hp
+    rw [Set.mem_Ioo] at hp
+    apply DifferentiableAt.differentiableWithinAt
+    simp only [hg_def]
+    apply DifferentiableAt.add
+    · exact Real.differentiableAt_binEntropy hp.1.ne' hp.2.ne
+    · fun_prop
+  have hderiv_eq : ∀ p ∈ Set.Ioo (0:ℝ) 1, deriv g p = Real.log (1-p) - Real.log p + 4*(p - 1/2) := by
+    intro p hp
+    rw [Set.mem_Ioo] at hp
+    have hbin : HasDerivAt Real.binEntropy (Real.log (1-p) - Real.log p) p :=
+      Real.hasDerivAt_binEntropy hp.1.ne' hp.2.ne
+    have hquad : HasDerivAt (fun p : ℝ => 2*(p-1/2)^2) (4*(p-1/2)) p := by
+      have h1 : HasDerivAt (fun p : ℝ => p - 1/2) 1 p := (hasDerivAt_id p).sub_const _
+      have h2 := (h1.fun_pow 2).const_mul (2:ℝ)
+      norm_num at h2
+      have hval : (4:ℝ) * (p - 1/2) = 2 * (2 * (p - 1/2)) := by ring
+      rw [hval]
+      exact h2
+    have hg' : HasDerivAt g (Real.log (1-p) - Real.log p + 4*(p-1/2)) p := by
+      rw [hg_def]; exact hbin.add hquad
+    exact hg'.deriv
+  have hgdiff' : DifferentiableOn ℝ (deriv g) (interior (Set.Icc (0:ℝ) 1)) := by
+    rw [interior_Icc]
+    have hmodel : DifferentiableOn ℝ
+        (fun p => Real.log (1-p) - Real.log p + 4*(p - 1/2)) (Set.Ioo (0:ℝ) 1) := by
+      intro p hp
+      rw [Set.mem_Ioo] at hp
+      apply DifferentiableAt.differentiableWithinAt
+      apply DifferentiableAt.add
+      · apply DifferentiableAt.sub
+        · fun_prop (disch := linarith)
+        · fun_prop (disch := linarith)
+      · fun_prop
+    exact hmodel.congr (fun p hp => hderiv_eq p hp)
+  have hderiv2_nonpos : ∀ p ∈ interior (Set.Icc (0:ℝ) 1), deriv^[2] g p ≤ 0 := by
+    rw [interior_Icc]
+    intro p hp
+    rw [Set.mem_Ioo] at hp
+    have heq2 : deriv^[2] g p = deriv (fun p => Real.log (1-p) - Real.log p + 4*(p - 1/2)) p := by
+      rw [Function.iterate_succ, Function.iterate_one, Function.comp_apply]
+      apply Filter.EventuallyEq.deriv_eq
+      filter_upwards [IsOpen.mem_nhds isOpen_Ioo hp] with x hx
+      exact hderiv_eq x hx
+    rw [heq2]
+    have hd1 : HasDerivAt (fun p : ℝ => Real.log (1-p)) (-(1-p)⁻¹) p := by
+      have h1 : HasDerivAt (fun p : ℝ => (1:ℝ) - p) (-1) p := by
+        simpa using (hasDerivAt_id p).const_sub (1:ℝ)
+      have h2 := h1.log (show (1:ℝ) - p ≠ 0 by linarith)
+      convert h2 using 1
+      field_simp
+    have hd2 : HasDerivAt (fun p : ℝ => Real.log p) p⁻¹ p := Real.hasDerivAt_log hp.1.ne'
+    have hd3 : HasDerivAt (fun p : ℝ => (4:ℝ)*(p - 1/2)) 4 p := by
+      have h1 : HasDerivAt (fun p : ℝ => p - 1/2) 1 p := (hasDerivAt_id p).sub_const _
+      simpa using h1.const_mul (4:ℝ)
+    have hsum : HasDerivAt (fun p => Real.log (1-p) - Real.log p + 4*(p - 1/2))
+        (-(1-p)⁻¹ - p⁻¹ + 4) p := (hd1.sub hd2).add hd3
+    rw [hsum.deriv]
+    have h14 : p * (1-p) ≤ 1/4 := by nlinarith [sq_nonneg (p - 1/2)]
+    have hppos : 0 < p := hp.1
+    have h1ppos : 0 < 1 - p := by linarith [hp.2]
+    have hinv : 4 ≤ (1-p)⁻¹ + p⁻¹ := by
+      rw [inv_add_inv h1ppos.ne' hppos.ne']
+      rw [le_div_iff₀ (by positivity)]
+      nlinarith [h14]
+    linarith [hinv]
+  have hconcave : ConcaveOn ℝ (Set.Icc (0:ℝ) 1) g :=
+    concaveOn_of_deriv2_nonpos (convex_Icc 0 1) hgcont hgdiff hgdiff' hderiv2_nonpos
+  have hsymm : ∀ q ∈ Set.Icc (0:ℝ) 1, g (1 - q) = g q := by
+    intro q _
+    simp only [hg_def]
+    rw [Real.binEntropy_one_sub]
+    ring_nf
+  have hg_half : g (1/2) = Real.log 2 := by
+    simp only [hg_def]
+    rw [show (1:ℝ)/2 - 1/2 = 0 by ring]
+    simp [Real.binEntropy_two_inv]
+  have key : g p ≤ Real.log 2 := by
+    rcases lt_trichotomy p (1/2) with hlt | heq | hgt
+    · have hx : p ∈ Set.Icc (0:ℝ) 1 := ⟨hp0, hp1⟩
+      have hz : (1:ℝ) - p ∈ Set.Icc (0:ℝ) 1 := by constructor <;> linarith
+      have hyz : (1:ℝ)/2 < 1 - p := by linarith
+      have hslope := hconcave.slope_anti_adjacent hx hz hlt hyz
+      rw [hsymm p ⟨hp0, hp1⟩, show (1:ℝ) - p - 1/2 = 1/2 - p from by ring] at hslope
+      have hpos : (0:ℝ) < 1/2 - p := by linarith
+      rw [div_le_div_iff_of_pos_right hpos] at hslope
+      rw [hg_half] at hslope
+      linarith
+    · rw [heq, hg_half]
+    · have hx : (1:ℝ) - p ∈ Set.Icc (0:ℝ) 1 := by constructor <;> linarith
+      have hz : p ∈ Set.Icc (0:ℝ) 1 := ⟨hp0, hp1⟩
+      have hxy : (1:ℝ) - p < 1/2 := by linarith
+      have hslope := hconcave.slope_anti_adjacent hx hz hxy hgt
+      rw [hsymm p ⟨hp0, hp1⟩, show (1:ℝ)/2 - (1 - p) = p - 1/2 from by ring] at hslope
+      have hpos : (0:ℝ) < p - 1/2 := by linarith
+      rw [div_le_div_iff_of_pos_right hpos] at hslope
+      rw [hg_half] at hslope
+      linarith
+  simp only [hg_def] at key
+  linarith [key]
+
+end
 
 /-! Rothvoss Lemma 9 analog: the quantized row-sum of a uniform random ±1 coloring
 has bounded Shannon entropy. This is the key new lemma for the joint-entropy route
