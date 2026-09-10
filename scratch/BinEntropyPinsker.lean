@@ -29,8 +29,9 @@ theorem binEntropy_le_log_two_sub_sq (p : ℝ) (hp0 : 0 ≤ p) (hp1 : p ≤ 1) :
       have h1 : HasDerivAt (fun p : ℝ => p - 1/2) 1 p := (hasDerivAt_id p).sub_const _
       have h2 := (h1.fun_pow 2).const_mul (2:ℝ)
       norm_num at h2
-      convert h2 using 1
-      ring
+      have hval : (4:ℝ) * (p - 1/2) = 2 * (2 * (p - 1/2)) := by ring
+      rw [hval]
+      exact h2
     have hg' : HasDerivAt g (Real.log (1-p) - Real.log p + 4*(p-1/2)) p := by
       rw [hg_def]; exact hbin.add hquad
     exact hg'.deriv
