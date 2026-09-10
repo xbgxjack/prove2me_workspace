@@ -427,4 +427,13 @@ lemma peripheral_entropyTerm_le (lam : ℝ) (hlam : 2 ≤ lam) {j : ℤ} (hj : j
     _ = q * (X - Real.log 2) / Real.log 2 := hstep2
     _ ≤ q * (2*X) / (2 * Real.log 2) := hstep3
 
+/-- Step 1 of the entropy-sum derivation: the central shell's (`j=0`) entropy
+term is controlled by its "escaping" mass `1 - p_0`, via the existing Mathlib
+bound `Real.negMulLog_le_one_sub_self`. -/
+lemma central_entropyTerm_le (p0 : ℝ) (hp0 : 0 ≤ p0) :
+    (if p0 = 0 then (0:ℝ) else p0 * Real.logb 2 (1 / p0)) ≤ (1 - p0) / Real.log 2 := by
+  rw [entropyTerm_eq_negMulLog_div]
+  have hlog2pos : 0 < Real.log 2 := Real.log_pos (by norm_num)
+  exact div_le_div_of_nonneg_right (Real.negMulLog_le_one_sub_self hp0) hlog2pos.le
+
 end
