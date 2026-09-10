@@ -102,11 +102,77 @@ reason no log(n) tax is paid:
   template for Lemma 9's Chernoff step, bridging MeasureTheory.Measure and the
   counting-based `empiricalProb`/`shannonEntropy` framework.
 
-## Immediate next step
+## Progress so far (scratch/SpencerEntropyLemma.lean, compiles clean, no sorries)
 
-Build Lemma 9's analog: for a 0/1 row vector a on Fin m, a threshold Δ=λ√m
-(λ≥2), and Z(χ) := ⌊(Σ a_j·(if χ_j then 1 else -1))/(2Δ)⌋ (mapped into a bounded
-Fintype, e.g. via a shift into `Fin (2M+1)` for M := suitable bound on |Z|),
-show `shannonEntropy Z ≤ 10·exp(-λ²/10)` (or a similarly-shaped, honestly-derived
-constant — matching Rothvoss's G(λ) up to constants we control ourselves, since
-we don't need to literally match his constants either, just SOME workable bound).
+- `RSign`, `rowSumB`: the ±1 coloring and 0/1-weighted row sum on `Fin m → Bool`.
+- `shellIdx`, `shellIdx_bound`: the quantized `⌊rowSumB/(2Δ)⌋` and its boundedness.
+- `uMeasure`, `uMeasure_real_coe_finset`: uniform measure on `Fin m → Bool` bridged
+  to plain Finset-counting (`(uMeasure m).real S = S.card / 2^m`) — this is the
+  bridge between the counting-based `shannonEntropy`/`empiricalProb` framework and
+  the measure-theoretic `HasSubgaussianMGF` framework.
+- `rowSumB_subgaussian`, `rowSumB_tail_bound`: the full Chernoff chain, giving
+  `(uMeasure m).real {ω | t ≤ |rowSumB a ω|} ≤ 2·exp(-t²/(2m))`.
+
+## Immediate next step: the entropy-of-a-shell-index bound
+
+Rather than reproducing Rothvoss's exact two-case `G(λ)` formula (which needs
+`log(10/λ)` for `λ<2`, not needed here since we only ever use `λ≥2`), derive our
+OWN clean sufficient bound — we don't need to match his constants, just need
+SOME workable one (same philosophy as `binEntropy_le_log_two_sub_sq` and
+`partial_coloring_via_kleitman`: independently-derived is fine).
+
+**Target**: for `Δ = λ√m`, `λ ≥ 2`: `shannonEntropy (shellFin Δ a) ≤ C·λ²·exp(-2λ²)`
+for an absolute constant C (or any similarly-shaped bound where the RHS depends
+only on λ, not on m — that's the property that actually matters for the later
+steps, since it lets λ be chosen as a fixed constant per round rather than
+growing with m or n).
+
+**Proof plan** (worked by hand, not yet formalized):
+`H(Z) = Σ_j p_j·log(1/p_j)` where `p_j := Pr[Z=j]`. Split into `j=0` and `j≠0`.
+- For `j ≠ 0`: `Z=j` (j≥1, say) implies `rowSumB ≥ 2jΔ`, so via
+  `rowSumB_tail_bound`, `p_j ≤ 2·exp(-2j²λ²)` (using `(2jΔ)²/(2m) = 2j²Δ²/m = 2j²λ²`
+  since `Δ=λ√m`). Symmetric for `j ≤ -1` via `-rowSumB`.
+- Since `p_j` is tiny for `λ≥2`, use `x·log(1/x)` increasing on `(0,1/e)` to bound
+  `p_j·log(1/p_j) ≤ 2exp(-2j²λ²)·(2j²λ² + log(1/2))`, then sum over `j≠0`: the
+  series is dominated by `j=±1` (Gaussian-tail-style decay in `j²`), giving a total
+  of order `λ²·exp(-2λ²)` (times an absolute constant from the geometric tail).
+- For `j=0`: `p_0 = 1 - Σ_{j≠0}p_j ≥ 1-ε` where `ε` is the tail mass just bounded.
+  Use `x·log(1/x) ≤ 2(1-x)` for `x ∈ [1/2,1]` (elementary, provable the same way
+  as the `1-log(1+y)≤y`-style bound used in `partial_coloring_via_kleitman`, or
+  via `Real.log_le_sub_one_of_pos` applied to `1/x`) to get `p_0·log(1/p_0) ≤ 2ε`.
+- Total: `H(Z) ≤ (tail sum bound) + 2ε = O(λ²·exp(-2λ²))`.
+
+This is a real, self-contained analytic proof (bounded-but-many-term sum with
+exponential decay, elementary log inequalities) — estimate 150-300 lines, on par
+with the hardest single lemmas from the Katona/Kleitman project. Next concrete
+step: define `shellFin` (the Fintype-codomain version of `shellIdx`, via a shift
+into `Fin (2m+3)`, using `hΔpos : (1:ℝ)/2 ≤ Δ` to keep the bound uniform), then
+attack the sum above, testing incrementally.
+
+## After that: assembling the rest
+
+1. Apply `shannonEntropy_pi_le` across all `n` rows simultaneously (this is where
+   the "no log(n) factor" property actually kicks in — see the main writeup above).
+2. `shannonEntropy_pigeonhole` to find a bucket `b` with `≥ 2^{0.9m}`-many colorings
+   (choosing `λ` so `n · C·λ²·exp(-2λ²) ≤ m/10`; note `λ` here does NOT need to grow
+   with `n` in the way the dead-end approach required, because this budget is
+   compared against `m/10`, i.e. it's about how many bits of entropy `n` roughly-
+   independent constant-entropy terms contribute, not about making a single
+   probability tinier than `1/n`).
+3. Kleitman (`kleitman_diameter`/Katona apparatus, already proven) with a FIXED
+   fraction `0.9`/`0.1` split (simpler than the general-θ case, no parity issue
+   since we pick the fraction) to get two colorings at Hamming distance `≥ m/10`.
+4. Difference of the two colorings gives the partial-coloring step (Rothvoss
+   Lemma 8's conclusion): `≥ m/10` newly colored, row bound `≤ Δ_i` per row.
+5. Iterate: `m_{k} = n·0.9^k`, each round needs its own `λ_k` satisfying step 2's
+   budget with the CURRENT `m_k` (this is where `λ_k` grows slowly with `k`, since
+   `log(2n/m_k)` grows linearly in `k` while `m_k` itself decays geometrically —
+   Rothvoss's own worked calculation, transcribed in
+   `/tmp/.../scratchpad/rothvoss.txt` under "Proof of Spencer's Thm", shows the
+   SERIES `Σ_k sqrt(m_k·log(2n/m_k))` telescopes to `O(sqrt(n·log(2n/n))) = O(sqrt(n))`
+   when `m_0 = n` (our exact setting) — dominated by the `k=0` term since the
+   exponential decay of `sqrt(m_k)` beats the linear growth of the log term).
+6. Stop once `m_K` is small enough that `spencer_random_finish`'s bound
+   `sqrt(2·m_K·log(4n))` is a negligible addition, sum everything, and verify the
+   total stays under `6√n` (or report the honestly-achieved constant if 6 exactly
+   proves too delicate without Spencer's original paper's precise schedule).
