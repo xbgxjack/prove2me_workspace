@@ -212,7 +212,7 @@ lemma shellFin_eq_iff (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j = 1)
   · intro h; omega
   · intro h; omega
 
-theorem lemma8_partial_coloring_round (n : ℕ) (a : Fin n → Fin m → ℝ)
+theorem solution (n : ℕ) (a : Fin n → Fin m → ℝ)
     (h01 : ∀ i j, a i j = 0 ∨ a i j = 1) (hm : 1 ≤ m) (lam : ℝ) (hlam : 2 ≤ lam)
     (hbudget : (n:ℝ) * ((12 / Real.log 2) * Real.exp (-lam^2/4)) ≤ (m:ℝ)/10) :
     ∃ x y : Fin m → Bool,
