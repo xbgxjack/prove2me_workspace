@@ -510,4 +510,45 @@ lemma peripheral_geom_sum_le (lam : ℝ) (hlam : 2 ≤ lam) (N : ℕ) :
         congr 1
         ring
 
+/-- Step 4 of the entropy-sum derivation: reindex the sum over `shellFin`'s
+`Fin (2m+3)` codomain to a sum over the integer shell index `j`, ranging over
+`Icc (-(m+1)) (m+1)`, via the shift bijection `k ↦ (k:ℤ) - (m+1)`. -/
+lemma shellFin_sum_eq_int_sum (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j = 1)
+    (hΔ : (1:ℝ)/2 ≤ Δ) (g : ℝ → ℝ) :
+    ∑ k : Fin (2*m+3), g (empiricalProb (shellFin Δ a) k)
+      = ∑ j ∈ Finset.Icc (-((m:ℤ)+1)) ((m:ℤ)+1),
+          g (((univ.filter (fun ω => shellIdx Δ a ω = j)).card : ℝ) / (2:ℝ) ^ m) := by
+  apply Finset.sum_nbij' (i := fun k : Fin (2*m+3) => (k:ℤ) - ((m:ℤ)+1))
+      (j := fun z : ℤ => (⟨(z + ((m:ℤ)+1)).toNat % (2*m+3), Nat.mod_lt _ (by omega)⟩ : Fin (2*m+3)))
+  · intro k _
+    have hk : (k:ℕ) < 2*m+3 := k.isLt
+    rw [Finset.mem_Icc]
+    omega
+  · intro z _
+    exact Finset.mem_univ _
+  · intro k _
+    have hk : (k:ℕ) < 2*m+3 := k.isLt
+    apply Fin.ext
+    dsimp only
+    have heq : (k:ℤ) - ((m:ℤ)+1) + ((m:ℤ)+1) = (k:ℤ) := by ring
+    rw [heq]
+    have hcast : (k:ℤ).toNat = (k:ℕ) := by
+      have h0 : (0:ℤ) ≤ (k:ℤ) := Int.natCast_nonneg _
+      have h1 := Int.toNat_of_nonneg h0
+      exact_mod_cast h1
+    rw [hcast]
+    exact Nat.mod_eq_of_lt hk
+  · intro z hz
+    rw [Finset.mem_Icc] at hz
+    have hzn : 0 ≤ z + ((m:ℤ)+1) := by omega
+    have hzu : (z + ((m:ℤ)+1)).toNat < 2*m+3 := by omega
+    have hval : ((⟨(z + ((m:ℤ)+1)).toNat % (2*m+3), Nat.mod_lt _ (by omega)⟩ : Fin (2*m+3)) : ℕ)
+        = (z + ((m:ℤ)+1)).toNat := Nat.mod_eq_of_lt hzu
+    show (((⟨(z + ((m:ℤ)+1)).toNat % (2*m+3), Nat.mod_lt _ (by omega)⟩ : Fin (2*m+3)) : ℕ) : ℤ)
+        - ((m:ℤ)+1) = z
+    rw [hval]
+    omega
+  · intro k _
+    rw [empiricalProb_shellFin Δ a h01 hΔ k]
+
 end
