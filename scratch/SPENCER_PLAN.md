@@ -102,7 +102,45 @@ reason no log(n) tax is paid:
   template for Lemma 9's Chernoff step, bridging MeasureTheory.Measure and the
   counting-based `empiricalProb`/`shannonEntropy` framework.
 
-## Progress so far (scratch/SpencerEntropyLemma.lean, compiles clean, no sorries)
+## Progress so far (scratch/SpencerEntropyLemma.lean, compiles clean, no sorries — updated)
+
+Additional pieces since the first checkpoint:
+- `shellFin`, `shellIdx_shift_range`, `shellFin_eq_toNat`, `shellFin_eq_iff`,
+  `shellFin_injOn`, `empiricalProb_shellFin`: the Fintype-codomain (`Fin (2m+3)`)
+  version of `shellIdx` via a shift, with a clean membership criterion, and the
+  bridge from `empiricalProb (shellFin Δ a) k` to a plain Finset-counting
+  statement about the underlying `shellIdx`.
+- `shellIdx_ge`, `shellIdx_lt`: the exact interval `[2jΔ, 2(j+1)Δ)` implied by
+  `shellIdx = j` (from the floor definition).
+- `shellIdx_prob_le_pos` (j≥1), `shellIdx_prob_le_neg` (j≤-2): the per-shell
+  Chernoff tail bounds via `rowSumB_tail_bound`.
+- **Important wrinkle discovered**: because `shellIdx` uses `⌊·⌋` (not a centered
+  rounding), the two shells `j=0` and `j=-1` are BOTH "central" (no useful lower
+  bound on `|rowSumB|` from either), while `j≥1` and `j≤-2` are the two decaying
+  tails. The final entropy sum needs to treat `{-1,0}` as a special pair (bounded
+  trivially, e.g. by `2·log2` since there are only 2 such terms each ≤ log2) and
+  sum the tail bound over `j≥1` and `j≤-2` separately.
+
+## Remaining work on Lemma 9 itself (not yet started)
+
+1. Unfold `shannonEntropy (shellFin Δ a) = Σ_{k : Fin(2m+3)} f(empiricalProb k)`
+   where `f p := if p=0 then 0 else p·logb 2 (1/p)`.
+2. Split the sum: central `{-1,0}` (2 terms, each trivially ≤ log2) vs peripheral
+   (reindex via `shellFin_eq_iff` back to `j : ℤ`, `j≥1` or `j≤-2`).
+3. For the peripheral sum: use `x·log(1/x)` increasing on `(0,1/e)` (true since
+   our tail-bound values are tiny once `λ≥2`) plus the exponential tail bounds
+   already proven, to get each term `≤ C·j²·λ²·exp(-2j²λ²)`-shaped, then sum via
+   comparison to a geometric series (dominated by `j=1` resp. `j=-2`).
+4. Package as: `shannonEntropy (shellFin Δ a) ≤ 2·Real.logb 2 2 + C·λ²·exp(-2λ²)`
+   for an absolute constant `C`, valid whenever `Δ=λ√m`, `λ≥2`.
+
+This is the hardest remaining piece — genuinely comparable to the hardest single
+lemmas from the Katona/Kleitman project. Everything built so far (the measure
+bridge, the Chernoff chain, the shell-index bookkeeping) is exactly the
+infrastructure this needs; no more new "supporting" lemmas should be needed
+before tackling the sum itself directly.
+
+## Progress so far (original checkpoint, still accurate for the base machinery)
 
 - `RSign`, `rowSumB`: the ±1 coloring and 0/1-weighted row sum on `Fin m → Bool`.
 - `shellIdx`, `shellIdx_bound`: the quantized `⌊rowSumB/(2Δ)⌋` and its boundedness.
