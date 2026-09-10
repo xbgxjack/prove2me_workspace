@@ -34,22 +34,10 @@ lemma abs_rowSumB_le (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j = 1) (χ 
 -- The quantization threshold width.
 variable (Δ : ℝ)
 
-/-- The quantized (shell-index) row sum: which width-`2Δ` interval `rowSumB a χ`
-falls into. -/
-def shellIdx (a : Fin m → ℝ) (χ : Fin m → Bool) : ℤ := ⌊rowSumB a χ / (2*Δ)⌋
-
-lemma shellIdx_bound (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j = 1) (hΔ : 0 < Δ)
-    (χ : Fin m → Bool) :
-    (shellIdx Δ a χ : ℝ) ∈ Set.Icc (-((m:ℝ)/(2*Δ) + 1)) ((m:ℝ)/(2*Δ) + 1) := by
-  have hb := abs_rowSumB_le a h01 χ
-  have hb2 : |rowSumB a χ / (2*Δ)| ≤ (m:ℝ)/(2*Δ) := by
-    rw [abs_div, abs_of_pos (by positivity : (0:ℝ) < 2*Δ)]
-    apply div_le_div_of_nonneg_right hb (by positivity)
-  rw [abs_le] at hb2
-  unfold shellIdx
-  have hfl := Int.floor_le (rowSumB a χ / (2*Δ))
-  have hfu := Int.lt_floor_add_one (rowSumB a χ / (2*Δ))
-  constructor <;> [linarith; linarith]
+-- NOTE: shellIdx (the quantized row-sum) is defined further below, AFTER the
+-- Chernoff/measure machinery, using `round` (not `⌊·⌋`) so that there is a
+-- single symmetric central bucket rather than two ({-1,0}) -- see
+-- scratch/SPENCER_PLAN.md for why the floor convention was abandoned.
 
 /-- The uniform probability measure on `Fin m → Bool`. -/
 def uMeasure (m : ℕ) : Measure (Fin m → Bool) :=
@@ -186,6 +174,48 @@ lemma rowSumB_tail_bound (m : ℕ) (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨
     _ ≤ Real.exp (-t^2 / (2 * m)) + Real.exp (-t^2 / (2 * m)) := add_le_add hpos hneg
     _ = 2 * Real.exp (-t^2 / (2 * m)) := by ring
 
+/-- The quantized (shell-index) row sum: the integer nearest `rowSumB a ω / (2Δ)`.
+Using `round` (rather than `⌊·⌋`) gives a single symmetric central bucket
+`shellIdx = 0 ↔ |rowSumB| ≤ Δ`, instead of two ({-1,0}) that would each carry
+roughly half the probability mass and cost a wasted bit of entropy regardless
+of `Δ` -- see scratch/SPENCER_PLAN.md. -/
+def shellIdx (a : Fin m → ℝ) (ω : Fin m → Bool) : ℤ := round (rowSumB a ω / (2*Δ))
+
+/-- The defining property of `round`: the quantized value is within `Δ` of the
+true row sum. -/
+lemma shellIdx_dist (a : Fin m → ℝ) (ω : Fin m → Bool) (hΔpos : 0 < Δ) :
+    |rowSumB a ω - 2*Δ*(shellIdx Δ a ω : ℝ)| ≤ Δ := by
+  have h := abs_sub_round (rowSumB a ω / (2*Δ))
+  unfold shellIdx
+  have heq : rowSumB a ω - 2*Δ*(round (rowSumB a ω / (2*Δ)) : ℝ)
+      = (2*Δ) * (rowSumB a ω / (2*Δ) - round (rowSumB a ω / (2*Δ))) := by
+    field_simp
+  rw [heq, abs_mul, abs_of_pos (by positivity : (0:ℝ) < 2*Δ)]
+  calc 2*Δ * |rowSumB a ω / (2*Δ) - round (rowSumB a ω / (2*Δ))|
+      ≤ 2*Δ * (1/2) := by
+        apply mul_le_mul_of_nonneg_left h (by positivity)
+    _ = Δ := by ring
+
+lemma shellIdx_bound (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j = 1) (hΔ : (1:ℝ)/2 ≤ Δ)
+    (ω : Fin m → Bool) :
+    (shellIdx Δ a ω : ℝ) ∈ Set.Icc (-((m:ℝ)/(2*Δ) + 1)) ((m:ℝ)/(2*Δ) + 1) := by
+  have hΔpos : 0 < Δ := by linarith
+  have hb := abs_rowSumB_le a h01 ω
+  have hd := shellIdx_dist Δ a ω hΔpos
+  rw [abs_le] at hb hd
+  have hub : 2*Δ*(shellIdx Δ a ω:ℝ) ≤ (m:ℝ) + 2*Δ := by nlinarith [hb.2, hd.1]
+  have hlb : -((m:ℝ) + 2*Δ) ≤ 2*Δ*(shellIdx Δ a ω:ℝ) := by nlinarith [hb.1, hd.2]
+  rw [Set.mem_Icc]
+  constructor
+  · have hstep : (-(shellIdx Δ a ω:ℝ) - 1) * (2*Δ) ≤ (m:ℝ) := by nlinarith [hlb]
+    have h2 : -(shellIdx Δ a ω:ℝ) - 1 ≤ (m:ℝ)/(2*Δ) := by
+      rw [le_div_iff₀ (by positivity : (0:ℝ) < 2*Δ)]; exact hstep
+    linarith [h2]
+  · have hstep : ((shellIdx Δ a ω:ℝ) - 1) * (2*Δ) ≤ (m:ℝ) := by nlinarith [hub]
+    have h2 : (shellIdx Δ a ω:ℝ) - 1 ≤ (m:ℝ)/(2*Δ) := by
+      rw [le_div_iff₀ (by positivity : (0:ℝ) < 2*Δ)]; exact hstep
+    linarith [h2]
+
 /-- The shell index, packaged into a fixed-size `Fin` type via a shift and a
 (never-triggered, for `Δ ≥ 1/2`) safety `%`. -/
 def shellFin (Δ : ℝ) (a : Fin m → ℝ) (ω : Fin m → Bool) : Fin (2*m+3) :=
@@ -195,11 +225,10 @@ def shellFin (Δ : ℝ) (a : Fin m → ℝ) (ω : Fin m → Bool) : Fin (2*m+3) 
 lemma shellIdx_shift_range (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j = 1)
     (hΔ : (1:ℝ)/2 ≤ Δ) (ω : Fin m → Bool) :
     0 ≤ shellIdx Δ a ω + (m+1) ∧ (shellIdx Δ a ω + (m+1)).toNat < 2*m+3 := by
-  have hΔpos : 0 < Δ := by linarith
-  have hb := shellIdx_bound Δ a h01 hΔpos ω
+  have hb := shellIdx_bound Δ a h01 hΔ ω
   rw [Set.mem_Icc] at hb
   have hle : (m:ℝ)/(2*Δ) ≤ m := by
-    rw [div_le_iff₀ (by positivity)]
+    rw [div_le_iff₀ (by linarith : (0:ℝ) < 2*Δ)]
     nlinarith [hΔ, (Nat.cast_nonneg m : (0:ℝ) ≤ m)]
   have hub : (shellIdx Δ a ω : ℝ) ≤ m + 1 := by linarith [hb.2, hle]
   have hlb : -(((m:ℝ)) + 1) ≤ (shellIdx Δ a ω : ℝ) := by linarith [hb.1, hle]
@@ -224,15 +253,6 @@ lemma shellFin_eq_iff (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j = 1)
   · intro h; omega
   · intro h; omega
 
-lemma shellFin_injOn (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j = 1)
-    (hΔ : (1:ℝ)/2 ≤ Δ) {ω ω' : Fin m → Bool}
-    (heq : shellFin Δ a ω = shellFin Δ a ω') :
-    shellIdx Δ a ω = shellIdx Δ a ω' := by
-  have h1 := (shellFin_eq_iff Δ a h01 hΔ ω (shellFin Δ a ω)).mp rfl
-  rw [heq] at h1
-  have h2 := (shellFin_eq_iff Δ a h01 hΔ ω' (shellFin Δ a ω')).mp rfl
-  rw [h1, h2]
-
 /-- The empirical probability of a shell (as a `shellFin` value) equals the
 Finset-counting probability of the corresponding `shellIdx` value. -/
 lemma empiricalProb_shellFin (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j = 1)
@@ -251,66 +271,38 @@ lemma empiricalProb_shellFin (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j =
   push_cast
   ring
 
-/-- If `shellIdx = j`, the row sum is at least `2jΔ`. -/
-lemma shellIdx_ge (a : Fin m → ℝ) {j : ℤ} (ω : Fin m → Bool) (heq : shellIdx Δ a ω = j)
-    (hΔpos : 0 < Δ) : 2 * (j:ℝ) * Δ ≤ rowSumB a ω := by
-  unfold shellIdx at heq
-  have h1 := Int.floor_le (rowSumB a ω / (2*Δ))
-  rw [heq] at h1
-  calc 2 * (j:ℝ) * Δ = (j:ℝ) * (2*Δ) := by ring
-    _ ≤ (rowSumB a ω / (2*Δ)) * (2*Δ) := mul_le_mul_of_nonneg_right h1 (by positivity)
-    _ = rowSumB a ω := by field_simp
-
-/-- If `shellIdx = j`, the row sum is less than `2(j+1)Δ`. -/
-lemma shellIdx_lt (a : Fin m → ℝ) {j : ℤ} (ω : Fin m → Bool) (heq : shellIdx Δ a ω = j)
-    (hΔpos : 0 < Δ) : rowSumB a ω < 2 * ((j:ℝ)+1) * Δ := by
-  unfold shellIdx at heq
-  have h1 := Int.lt_floor_add_one (rowSumB a ω / (2*Δ))
-  rw [heq] at h1
-  calc rowSumB a ω = (rowSumB a ω / (2*Δ)) * (2*Δ) := by field_simp
-    _ < ((j:ℝ)+1) * (2*Δ) := mul_lt_mul_of_pos_right h1 (by positivity)
-    _ = 2 * ((j:ℝ)+1) * Δ := by ring
-
-/-- Tail bound for a positive shell: `Pr[shellIdx = j] ≤ 2·exp(-2j²λ²)` when
-`Δ = λ√m` and `j ≥ 1`. -/
-lemma shellIdx_prob_le_pos (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j = 1)
-    (hΔpos : 0 < Δ) {j : ℤ} (hj : 1 ≤ j) :
+/-- Tail bound for a nonzero shell: `Pr[shellIdx = j] ≤ 2·exp(-λ²(2|j|-1)²/2)`
+when `Δ = λ√m` and `j ≠ 0`. -/
+lemma shellIdx_prob_le (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j = 1)
+    (hΔpos : 0 < Δ) {j : ℤ} (hj : j ≠ 0) :
     ((univ.filter (fun ω => shellIdx Δ a ω = j)).card : ℝ) / (2:ℝ)^m
-      ≤ 2 * Real.exp (-(2*(j:ℝ)*Δ)^2 / (2*m)) := by
-  have hjr : (1:ℝ) ≤ (j:ℝ) := by exact_mod_cast hj
+      ≤ 2 * Real.exp (-(Δ*(2*|(j:ℝ)|-1))^2 / (2*m)) := by
+  have hj1 : (1:ℝ) ≤ |(j:ℝ)| := by
+    have h1 : (1:ℤ) ≤ |j| := Int.one_le_abs hj
+    have h2 : ((|j| : ℤ) : ℝ) = |(j:ℝ)| := by push_cast [Int.cast_abs]; ring
+    calc (1:ℝ) = ((1:ℤ):ℝ) := by norm_num
+      _ ≤ ((|j| : ℤ) : ℝ) := by exact_mod_cast h1
+      _ = |(j:ℝ)| := h2
   rw [← uMeasure_real_coe_finset m (univ.filter (fun ω => shellIdx Δ a ω = j))]
   have hsub : (↑(univ.filter (fun ω => shellIdx Δ a ω = j)) : Set (Fin m → Bool))
-      ⊆ {ω | 2*(j:ℝ)*Δ ≤ |rowSumB a ω|} := by
+      ⊆ {ω | Δ*(2*|(j:ℝ)|-1) ≤ |rowSumB a ω|} := by
     intro ω hω
     simp only [Finset.coe_filter, Finset.mem_univ, true_and, Set.mem_setOf_eq] at hω ⊢
-    have hge := shellIdx_ge Δ a ω hω hΔpos
-    exact le_trans hge (le_abs_self _)
+    have hd := shellIdx_dist Δ a ω hΔpos
+    rw [hω] at hd
+    rw [abs_le] at hd
+    rcases abs_cases (j:ℝ) with ⟨hjeq, hjpos⟩ | ⟨hjeq, hjneg⟩
+    · rw [hjeq]
+      rcases abs_cases (rowSumB a ω) with ⟨hreq, _⟩ | ⟨hreq, hrneg⟩
+      · rw [hreq]; nlinarith [hd.1, hd.2]
+      · exfalso; nlinarith [hd.1, hd.2, hjpos]
+    · rw [hjeq]
+      rcases abs_cases (rowSumB a ω) with ⟨hreq, hrpos⟩ | ⟨hreq, _⟩
+      · exfalso; nlinarith [hd.1, hd.2, hjneg]
+      · rw [hreq]; nlinarith [hd.1, hd.2]
   calc (uMeasure m).real (↑(univ.filter (fun ω => shellIdx Δ a ω = j)) : Set (Fin m → Bool))
-      ≤ (uMeasure m).real {ω | 2*(j:ℝ)*Δ ≤ |rowSumB a ω|} := measureReal_mono hsub
-    _ ≤ 2 * Real.exp (-(2*(j:ℝ)*Δ)^2 / (2*m)) :=
-        rowSumB_tail_bound m a h01 (2*(j:ℝ)*Δ) (by nlinarith)
-
-/-- Tail bound for a shell two or more below zero:
-`Pr[shellIdx = j] ≤ 2·exp(-2(j+1)²λ²)` when `Δ = λ√m` and `j ≤ -2`. -/
-lemma shellIdx_prob_le_neg (a : Fin m → ℝ) (h01 : ∀ j, a j = 0 ∨ a j = 1)
-    (hΔpos : 0 < Δ) {j : ℤ} (hj : j ≤ -2) :
-    ((univ.filter (fun ω => shellIdx Δ a ω = j)).card : ℝ) / (2:ℝ)^m
-      ≤ 2 * Real.exp (-(2*((j:ℝ)+1)*Δ)^2 / (2*m)) := by
-  have hjr : (j:ℝ) + 1 ≤ -1 := by
-    have : (j:ℝ) ≤ -2 := by exact_mod_cast hj
-    linarith
-  rw [← uMeasure_real_coe_finset m (univ.filter (fun ω => shellIdx Δ a ω = j))]
-  have hsub : (↑(univ.filter (fun ω => shellIdx Δ a ω = j)) : Set (Fin m → Bool))
-      ⊆ {ω | -(2*((j:ℝ)+1)*Δ) ≤ |rowSumB a ω|} := by
-    intro ω hω
-    simp only [Finset.coe_filter, Finset.mem_univ, true_and, Set.mem_setOf_eq] at hω ⊢
-    have hlt := shellIdx_lt Δ a ω hω hΔpos
-    have h2 : -(rowSumB a ω) ≤ |rowSumB a ω| := neg_le_abs _
-    linarith
-  calc (uMeasure m).real (↑(univ.filter (fun ω => shellIdx Δ a ω = j)) : Set (Fin m → Bool))
-      ≤ (uMeasure m).real {ω | -(2*((j:ℝ)+1)*Δ) ≤ |rowSumB a ω|} := measureReal_mono hsub
-    _ ≤ 2 * Real.exp (-(2*((j:ℝ)+1)*Δ)^2 / (2*m)) := by
-        have := rowSumB_tail_bound m a h01 (-(2*((j:ℝ)+1)*Δ)) (by nlinarith)
-        rwa [neg_sq] at this
+      ≤ (uMeasure m).real {ω | Δ*(2*|(j:ℝ)|-1) ≤ |rowSumB a ω|} := measureReal_mono hsub
+    _ ≤ 2 * Real.exp (-(Δ*(2*|(j:ℝ)|-1))^2 / (2*m)) :=
+        rowSumB_tail_bound m a h01 (Δ*(2*|(j:ℝ)|-1)) (by nlinarith)
 
 end
