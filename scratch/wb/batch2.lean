@@ -79,7 +79,6 @@ theorem s44304 (a b c d : ℝ) (ha : 0 < a) (hb : 0 < b) (hc : 0 < c) (hd : 0 < 
     have e : ((d + a^2)/(d + b*c)) * ((d + b^2)/(d + c*a)) * ((d + c^2)/(d + a*b))
         = ((d + a^2) * ((d + b^2) * (d + c^2))) / ((d + b*c) * ((d + c*a) * (d + a*b))) := by
       field_simp
-      ring
     rw [e, le_div_iff₀ (by positivity), one_mul]
     nlinarith [mul_nonneg (sq_nonneg d) (sq_nonneg (a - b)),
       mul_nonneg (sq_nonneg d) (sq_nonneg (b - c)),
