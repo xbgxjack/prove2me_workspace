@@ -3,30 +3,7 @@ open Real Nat
 
 set_option maxHeartbeats 1000000
 
-/- [5] base_33327 : a+b+c = 3 ⊢ a¹²+b¹²+c¹²+8(ab+bc+ca) ≥ 27.
-   Since (a+b+c)² = 9 gives Σa² = 9 - 2q, the claim is Σa¹² ≥ 4Σa² - 9, which is
-   the tangent-line bound Σ h(aᵢ) ≥ 0 for h(t) = t¹² - 4t² - 4t + 7.  And
-   h(t) = (t-1)²(t¹⁰+2t⁹+3t⁸+4t⁷+5t⁶+6t⁵+7t⁴+8t³+9t²+10t+7), all coefficients positive. -/
-theorem s33327 (a b c : ℝ) (ha : 0 < a) (hb : 0 < b) (hc : 0 < c) (hab : a + b + c = 3) :
-    a ^ 12 + b ^ 12 + c ^ 12 + 8 * (a * b + b * c + c * a) ≥ 27 := by
-  have key : ∀ t : ℝ, 0 ≤ t → 0 ≤ t^12 - 4*t^2 - 4*t + 7 := by
-    intro t ht
-    have e : t^12 - 4*t^2 - 4*t + 7
-        = (t-1)^2 * (t^10 + 2*t^9 + 3*t^8 + 4*t^7 + 5*t^6 + 6*t^5 + 7*t^4 + 8*t^3
-            + 9*t^2 + 10*t + 7) := by ring
-    rw [e]
-    have hpos : (0:ℝ) ≤ t^10 + 2*t^9 + 3*t^8 + 4*t^7 + 5*t^6 + 6*t^5 + 7*t^4 + 8*t^3
-        + 9*t^2 + 10*t + 7 := by positivity
-    exact mul_nonneg (sq_nonneg _) hpos
-  have hsq : a^2 + b^2 + c^2 + 2*(a*b + b*c + c*a) = 9 := by
-    linear_combination (a + b + c + 3) * hab
-  linarith [key a ha.le, key b hb.le, key c hc.le, hsq, hab]
-
-/- [6] base_41666 : with the cycle w→z→y→x→w the claim is Σ aᵢ⁴/aᵢ₊₁ ≥ Σ aᵢaᵢ₊₁².
-   Cauchy in Engel form: a⁴/b ≥ 2a²t - t²b for every t, since the difference is
-   (a²-tb)²/b.  Taking t = S/T with S = Σaᵢ², T = Σaᵢ sums to S²/T, and it remains
-   to check the polynomial inequality S² ≥ T·(Σ aᵢaᵢ₊₁²). -/
-theorem s41666 (w x y z : ℝ) (hw : 0 < w) (hx : 0 < x) (hy : 0 < y) (hz : 0 < z) :
+theorem solution (w x y z : ℝ) (hw : 0 < w) (hx : 0 < x) (hy : 0 < y) (hz : 0 < z) :
     (w^4 / z + x^4 / w + y^4 / x + z^4 / y) ≥ w * z^2 + x * w^2 + y * x^2 + z * y^2 := by
   have hT : (0:ℝ) < w + x + y + z := by linarith
   set S : ℝ := w^2 + x^2 + y^2 + z^2 with hS
