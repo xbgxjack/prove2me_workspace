@@ -11,3 +11,6 @@ lake-manifest.json
 
 # OS noise
 .DS_Store
+
+# machine-generated Lean Workbook batch files (regenerable from the platform API)
+scratch/lw/
