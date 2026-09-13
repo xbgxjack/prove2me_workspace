@@ -13,7 +13,7 @@ theorem s22008 (a b c d : ℝ) (ha : 0 < a) (hb : 0 < b) (hc : 0 < c) (hd : 0 < 
   have key : ∀ x y z : ℝ, 0 < x → 0 < y → 0 < z →
       (x^2 + y^2 + z^2)/3 ≤ (x^3 + y^3 + z^3)/(x + y + z) := by
     intro x y z hx hy hz
-    rw [div_le_div_iff (by norm_num) (by linarith)]
+    rw [div_le_div_iff₀ (by norm_num) (by linarith)]
     nlinarith [mul_nonneg (sq_nonneg (x - y)) (by linarith : (0:ℝ) ≤ x + y),
       mul_nonneg (sq_nonneg (y - z)) (by linarith : (0:ℝ) ≤ y + z),
       mul_nonneg (sq_nonneg (z - x)) (by linarith : (0:ℝ) ≤ z + x)]
@@ -36,10 +36,10 @@ theorem s16519 (x y z k : ℝ) (hx : 0 < x) (hy : 0 < y) (hz : 0 < z) (hk : 0 < 
       nlinarith [mul_nonneg (mul_nonneg hk.le hw.le) (sq_nonneg (u - v)),
         mul_nonneg (mul_nonneg hk.le hv.le) (sq_nonneg (u - w)),
         mul_nonneg hu.le (sq_nonneg (v - w))]
-    rw [div_le_div_iff hden (by positivity)]
+    rw [div_le_div_iff₀ hden (by positivity)]
     have he : k/u + 1/v + 1/w = (k*(v*w) + u*w + u*v) / (u*v*w) := by
-      field_simp; ring
-    rw [he, div_mul_eq_mul_div, le_div_iff (by positivity)]
+      field_simp
+    rw [he, div_mul_eq_mul_div, le_div_iff₀ (by positivity)]
     nlinarith [hpoly]
   have h1 := key x y z hx hy hz
   have h2 := key y x z hy hx hz
@@ -76,7 +76,11 @@ theorem s44304 (a b c d : ℝ) (ha : 0 < a) (hb : 0 < b) (hc : 0 < c) (hd : 0 < 
   have p2 : (0:ℝ) < d + c * a := by positivity
   have p3 : (0:ℝ) < d + a * b := by positivity
   have hprod : 1 ≤ ((d + a^2)/(d + b*c)) * ((d + b^2)/(d + c*a)) * ((d + c^2)/(d + a*b)) := by
-    rw [div_mul_div_comm, div_mul_div_comm, le_div_iff (by positivity)]
+    have e : ((d + a^2)/(d + b*c)) * ((d + b^2)/(d + c*a)) * ((d + c^2)/(d + a*b))
+        = ((d + a^2) * ((d + b^2) * (d + c^2))) / ((d + b*c) * ((d + c*a) * (d + a*b))) := by
+      field_simp
+      ring
+    rw [e, le_div_iff₀ (by positivity), one_mul]
     nlinarith [mul_nonneg (sq_nonneg d) (sq_nonneg (a - b)),
       mul_nonneg (sq_nonneg d) (sq_nonneg (b - c)),
       mul_nonneg (sq_nonneg d) (sq_nonneg (c - a)),
